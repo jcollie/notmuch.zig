@@ -21,7 +21,7 @@
       in {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
-            pkgs.zig_0_13
+            pkgs.zig_0_14
             pkgs.notmuch
           ];
         };
