@@ -7,10 +7,10 @@ const c = @cImport({
 const log = std.log.scoped(.notmuch);
 
 fn generateEnum(comptime prefix: []const u8) type {
-    @setEvalBranchQuota(9000);
+    @setEvalBranchQuota(10000);
     const info = @typeInfo(c);
     var count: usize = 0;
-    for (info.Struct.decls) |d| {
+    for (info.@"struct".decls) |d| {
         if (std.mem.eql(u8, "NOTMUCH_STATUS_LAST_STATUS", d.name)) continue;
         if (std.mem.startsWith(u8, d.name, prefix)) {
             count += 1;
@@ -19,7 +19,7 @@ fn generateEnum(comptime prefix: []const u8) type {
     var fields: [count]std.builtin.Type.EnumField = undefined;
     var index: usize = 0;
     var max: c.notmuch_status_t = 0;
-    for (info.Struct.decls) |d| {
+    for (info.@"struct".decls) |d| {
         if (std.mem.eql(u8, "NOTMUCH_STATUS_LAST_STATUS", d.name)) continue;
         if (std.mem.startsWith(u8, d.name, prefix)) {
             max = @max(max, @field(c, d.name));
@@ -30,8 +30,8 @@ fn generateEnum(comptime prefix: []const u8) type {
             index += 1;
         }
     }
-    return @Type(.{ .Enum = .{
-        .tag_type = std.meta.Int(.unsigned, std.math.ceilPowerOfTwoAssert(u16, max)),
+    return @Type(.{ .@"enum" = .{
+        .tag_type = std.math.IntFittingRange(0, max),
         .fields = &fields,
         .decls = &.{},
         .is_exhaustive = true,
@@ -168,3 +168,7 @@ pub const Message = struct {
         _ = c.notmuch_message_destroy(self.message);
     }
 };
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
+}
