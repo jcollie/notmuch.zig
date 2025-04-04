@@ -45,6 +45,6 @@ jobs:
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
       - name: Deploy to GitHub Pages
-        uses: action/deploy-pages@v4
+        uses: actions/deploy-pages@v4
         
       
