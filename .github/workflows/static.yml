@@ -17,16 +17,18 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: checkout
+      - name: Checkout
         uses: actions/checkout@v4
-      - name: install Zig
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Install Zig
         uses: mlugg/setup-zig@v1
         with:
           version: 0.14.0
-      - name: build docs
+      - name: Build docs
         run: |
           zig build-lib -femit-docs src/notmuch.zig
-      - name: upload pages artifact
+      - name: Upload Pages artifact
         id: upload
         uses: actions/upload-pages-artifact@v3
         with:
@@ -40,7 +42,9 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - name: deploy to github pages
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
         uses: action/deploy-pages@v4
         
       
