@@ -5,6 +5,8 @@ const std = @import("std");
 
 const c = @import("c");
 
+/// Generate Zig enums from C enums that begin with a prefix. Skip creating
+/// enums for certain names.
 fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
     @setEvalBranchQuota(24000);
     const info = @typeInfo(c);
@@ -18,14 +20,14 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
         }
     }
     const TagType = std.math.IntFittingRange(0, max);
-    var field_names: [count]std.builtin.Type.EnumField = undefined;
+    var field_names: [count][]const u8 = undefined;
     var field_values: [count]TagType = undefined;
     var index = 0;
     outer: for (info.@"struct".decls) |decl| {
         for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
         if (std.mem.cutPrefix(u8, decl.name, prefix)) |suffix| {
             field_names[index] = suffix;
-            field_values = @field(c, decl.name);
+            field_values[index] = @field(c, decl.name);
             index += 1;
         }
     }
@@ -57,3 +59,8 @@ pub const SORT = generateEnum("NOTMUCH_SORT_", &.{});
 
 /// Status codes used for the return values of most functions.
 pub const STATUS = generateEnum("NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});
+
+/// Convenience function to convert a notmuch API return code to a STATUS enum.
+pub fn status(rc: c_uint) STATUS {
+    return @enumFromInt(rc);
+}

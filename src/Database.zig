@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 const Database = @This();
 
@@ -17,6 +17,8 @@ const CONFIG = enums.CONFIG;
 const DATABASE_MODE = enums.DATABASE_MODE;
 const DECRYPT = enums.DECRYPT;
 const QUERY_SYNTAX = enums.QUERY_SYNTAX;
+const STATUS = enums.STATUS;
+const status = enums.status;
 
 const Message = @import("Message.zig");
 const Query = @import("Query.zig");
@@ -162,6 +164,69 @@ pub const UpgradeProgressNotifyCallback = fn (closure: ?*anyopaque, progress: f6
 /// `closure` is passed verbatim to any callback invoked.
 pub fn upgrade(self: *const Database, progress_notify: ?UpgradeProgressNotifyCallback, closure: ?*anyopaque) Error!void {
     try wrap(c.notmuch_database_upgrade(self.database, progress_notify, closure));
+}
+
+/// Begin an atomic database operation.
+///
+/// Any modifications performed between a successful begin and a
+/// notmuch_database_end_atomic will be applied to the database atomically.
+/// Note that, unlike a typical database transaction, this only ensures
+/// atomicity, not durability; neither begin nor end necessarily flush
+/// modifications to disk.
+///
+/// Atomic sections may be nested. begin_atomic and end_atomic must always be
+/// called in pairs.
+pub fn beginAtomic(self: *const Database) error{XapianException}!void {
+    switch (status(c.notmuch_database_begin_atomic(self.database))) {
+        .SUCCESS => {},
+        .XAPIAN_EXCEPTION => return error.XapianException,
+        else => unreachable,
+    }
+}
+
+/// Indicate the end of an atomic database operation. If repeated (with matching
+/// notmuch_database_begin_atomic) "database.autocommit" times, commit the the
+/// transaction and all previous (non-cancelled) transactions to the database.
+pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException }!void {
+    switch (status(c.notmuch_database_begin_atomic(self.database))) {
+        .SUCCESS => {},
+        .UNBALANCED_ATOMIC => return error.UnbalancedAtomic,
+        .XAPIAN_EXCEPTION => return error.XapianException,
+        else => unreachable,
+    }
+}
+
+pub const Revision = struct {
+    revision: u64,
+    uuid: []const u8,
+
+    pub fn compare(self: Revision, other: Revision) error{DatabaseMismatch}!enum { lt, eq, gt } {
+        if (!std.mem.eql(u8, self.uuid, other.uuid)) return error.DatabaseMismatch;
+        if (self.revision < other.revision) return .lt;
+        if (self.revision > other.revision) return .gt;
+        return .eq;
+    }
+};
+
+/// Return the committed database revision and UUID.
+///
+/// The database revision number increases monotonically with each commit to the
+/// database. Hence, all messages and message changes committed to the database
+/// (that is, visible to readers) have a last modification revision <= the
+/// committed database revision. Any messages committed in the future will be
+/// assigned a modification revision > the committed database revision.
+///
+/// The UUID is a opaque string that uniquely identifies this database. Two
+/// revision numbers are only comparable if they have the same database UUID.
+/// The string 'uuid' is owned by notmuch and should not be freed or modified by
+/// the user.
+pub fn getRevision(self: *const Database) Revision {
+    var uuid: [*c]const u8 = undefined;
+    const revision = c.notmuch_database_get_revision(self.database, &uuid);
+    return .{
+        .revision = revision,
+        .uuid = std.mem.span(uuid),
+    };
 }
 
 pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!Message {
