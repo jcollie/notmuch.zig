@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
+# SPDX-License-Identifier: MIT
+
 name: Deploy docs to GitHub Pages
 
 on:
@@ -46,5 +49,3 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
-        
-      

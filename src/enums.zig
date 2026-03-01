@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
+// SPDX-License-Identifier: MIT
+
 const std = @import("std");
 
 const c = @import("c.zig").c;

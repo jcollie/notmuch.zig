@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
+// SPDX-License-Identifier: MIT
+
 const MessagesIterator = @This();
 
 const c = @import("c.zig").c;

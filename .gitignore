@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
+# SPDX-License-Identifier: MIT
+
 /.zig-cache
 /zig-out
-
+/zig-pkg
+/result*
