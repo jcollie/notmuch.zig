@@ -12,19 +12,26 @@ const STATUS = @import("enums.zig").STATUS;
 pub const Error = error{
     BadQuerySyntax,
     ClosedDatabase,
+    /// Database already exists, not created.
     DatabaseExists,
     DuplicateMessageID,
     FailedCryptoContextCreation,
+    /// An error occurred trying to open the database or config file (such as
+    /// permission denied, or file not found, etc.).
     FileError,
     FileNotEmail,
+    /// There was an error determining the database format version.
+    FormatVersionError,
     Ignored,
     IllegalArgument,
     MaformedCryptoProtocol,
     NoConfig,
     NoDatabase,
     NoMailRoot,
+    /// A newer version of the notmuch library is required.
     NotmuchVersion,
     NullPointer,
+    /// Out of memory.
     OutOfMemory,
     PathError,
     ReadOnlyDatabase,
@@ -33,7 +40,9 @@ pub const Error = error{
     UnbalancedFreezeThaw,
     UnknownCryptoProtocol,
     UnsupportedOperation,
+    /// The database needs to be upgraded to a newer format.
     UpgradeRequired,
+    /// A Xapian exception occurred.
     XapianException,
 };
 

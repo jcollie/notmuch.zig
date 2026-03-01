@@ -17,8 +17,9 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
             count += 1;
         }
     }
+    const TagType = std.math.IntFittingRange(0, max);
     var field_names: [count]std.builtin.Type.EnumField = undefined;
-    var field_values: [count]std.math.IntFittingRange(0, max) = undefined;
+    var field_values: [count]TagType = undefined;
     var index = 0;
     outer: for (info.@"struct".decls) |decl| {
         for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
@@ -29,7 +30,7 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
         }
     }
     return @Enum(
-        std.math.IntFittingRange(0, max),
+        TagType,
         .exhaustive,
         &field_names,
         &field_values,
@@ -54,4 +55,5 @@ pub const QUERY_SYNTAX = generateEnum("NOTMUCH_QUERY_SYNTAX_", &.{});
 /// Sort values for notmuch_query_set_sort.
 pub const SORT = generateEnum("NOTMUCH_SORT_", &.{});
 
+/// Status codes used for the return values of most functions.
 pub const STATUS = generateEnum("NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});

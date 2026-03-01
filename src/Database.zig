@@ -24,11 +24,15 @@ const Query = @import("Query.zig");
 database: *c.notmuch_database_t,
 
 pub const OpenOptions = struct {
-    config_path: ?[:0]const u8,
-    database_path: ?[*:0]const u8,
-    profile: ?[:0]const u8,
+    /// Specify a config file.
+    config_path: ?[:0]const u8 = null,
+    /// Specify a database path.
+    database_path: ?[*:0]const u8 = null,
+    /// Specify a profile.
+    profile: ?[:0]const u8 = null,
 };
 
+/// Open an existing notmuch database.
 pub fn open(mode: DATABASE_MODE, options: OpenOptions) Error!Database {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
         return error.NotmuchVersion;
@@ -37,10 +41,10 @@ pub fn open(mode: DATABASE_MODE, options: OpenOptions) Error!Database {
     var error_message: [*c]u8 = null;
     var database: ?*c.notmuch_database_t = null;
     try wrapMessage(c.notmuch_database_open_with_config(
-        options.database_path orelse null,
+        options.database_path,
         @intFromEnum(mode),
-        options.config_path orelse null,
-        options.profile orelse null,
+        options.config_path,
+        options.profile,
         &database,
         &error_message,
     ), error_message);
@@ -50,11 +54,15 @@ pub fn open(mode: DATABASE_MODE, options: OpenOptions) Error!Database {
 }
 
 pub const CreateOptions = struct {
-    config_path: ?[:0]const u8,
-    database_path: ?[*:0]const u8,
-    profile: ?[:0]const u8,
+    /// Specify a config file.
+    config_path: ?[:0]const u8 = null,
+    /// Specify a database path.
+    database_path: ?[*:0]const u8 = null,
+    /// Specify a profile.
+    profile: ?[:0]const u8 = null,
 };
 
+/// Create a new notmuch database.
 pub fn create(options: CreateOptions) Error!Database {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
         return error.NotmuchVersion;
@@ -64,9 +72,9 @@ pub fn create(options: CreateOptions) Error!Database {
     var database: ?*c.notmuch_database_t = null;
     try wrapMessage(
         c.notmuch_database_create_with_config(
-            options.database_path orelse null,
-            options.config_path orelse null,
-            options.profile orelse null,
+            options.database_path,
+            options.config_path,
+            options.profile,
             &database,
             &error_message,
         ),
@@ -77,8 +85,18 @@ pub fn create(options: CreateOptions) Error!Database {
     };
 }
 
+/// Close the database.
 pub fn close(self: *const Database) void {
     _ = c.notmuch_database_close(self.database);
+}
+
+/// Destroy the notmuch database, closing it if necessary and freeing all
+/// associated resources.
+///
+/// Return value as in notmuch_database_close if the database was open;
+/// notmuch_database_destroy itself has no failure modes.
+pub fn destroy(self: *const Database) Error!void {
+    try wrap(c.notmuch_database_destroy(self.database));
 }
 
 pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!void {
@@ -88,6 +106,62 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
         if (indexopts) |i| i.indexopts else null,
         null,
     ));
+}
+
+/// A callback invoked by Database.compact to notify the user of the
+/// progress of the compaction process.
+pub const StatusCallback = fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
+
+/// Compact a notmuch database, backing up the original database to the given
+/// path.
+///
+/// The database will be opened in read-write mode during the compaction process
+/// to ensure no writes are made.
+///
+/// If the optional callback function `status_cb` is non-`null`, it will be
+/// called with diagnostic and informational messages. The argument `closure` is
+/// passed verbatim to any callback invoked.
+pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_compact(path, backup_path, status_cb, closure));
+}
+
+/// Return the database format version of the database.
+pub fn getVersion(self: *const Database) error{FormatVersionError}!c_uint {
+    const version = c.notmuch_database_get_version(self.database);
+    if (version == 0) return error.FormatVersionError;
+    return version;
+}
+
+/// Can the database be upgraded to a newer database version?
+///
+/// If this function returns TRUE, then the caller may call
+/// notmuch_database_upgrade to upgrade the database. If the caller does
+/// not upgrade an out-of-date database, then some functions may fail with
+/// NOTMUCH_STATUS_UPGRADE_REQUIRED. This always returns FALSE for a read-only
+/// database because there's no way to upgrade a read-only database.
+///
+/// Also returns FALSE if an error occurs accessing the database.
+pub fn needsUpgrade(self: *const Database) bool {
+    return c.notmuch_database_needs_upgrade(self.database) != 0;
+}
+
+pub const UpgradeProgressNotifyCallback = fn (closure: ?*anyopaque, progress: f64) callconv(.c) void;
+
+/// Upgrade the current database to the latest supported version.
+///
+/// This ensures that all current notmuch functionality will be available on the
+/// database. After opening a database in read-write mode, it is recommended
+/// that clients check if an upgrade is needed (Database.needsUpgrade) and
+/// if so, upgrade with this function before making any modifications. If
+/// Database.needsUpgrade returns FALSE, this will be a no-op.
+///
+/// The optional `progress_notify` callback can be used by the caller to provide
+/// progress indication to the user. If non-`null` it will be called periodically
+/// with `progress` as a floating-point value in the range of [0.0 .. 1.0]
+/// indicating the progress made so far in the upgrade process. The argument
+/// `closure` is passed verbatim to any callback invoked.
+pub fn upgrade(self: *const Database, progress_notify: ?UpgradeProgressNotifyCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_upgrade(self.database, progress_notify, closure));
 }
 
 pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!Message {
@@ -134,24 +208,24 @@ pub fn configPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(config orelse return null);
 }
 
-/// get a configuration value from an open database.
+/// Get a configuration value from an open database.
 ///
 /// This value reflects all configuration information given at the time
 /// the database was opened.
 ///
-/// Returns NULL if 'key' unknown or if no value is known for 'key'.
-/// Otherwise returns a string owned by notmuch which should not be modified
+/// Returns `null` if `key` is unknown or if no value is known for `key`.
+/// Otherwise returns a string owned by `notmuch` which should not be modified
 /// nor freed by the caller.
 pub fn configGet(self: *const Database, key: CONFIG) Error!?[:0]const u8 {
     return std.mem.span(c.notmuch_config_get(self.database, @intFromEnum(key)) orelse return null);
 }
 
-/// set a configuration value
+/// Set a configuration value
 pub fn configSet(self: *const Database, key: CONFIG, value: [:0]const u8) Error!void {
     try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
 }
 
-/// Returns an iterator for a ';'-delimited list of configuration values
+/// Returns an iterator for a `;`-delimited list of configuration values.
 ///
 /// These values reflect all configuration information given at the
 /// time the database was opened.
@@ -197,9 +271,7 @@ pub fn configGetValuesString(
     };
 }
 
-/// Create a new query for 'database'.
-///
-/// Here, 'database' should be an open database, (see `open` and `create`).
+/// Create a new query.
 ///
 /// For the query string, we'll document the syntax here more completely in the
 /// future, but it's likely to be a specialized version of the general Xapian
@@ -215,9 +287,7 @@ pub fn configGetValuesString(
 /// `Query.searchMessages` and `Query.searchThreads` to actually execute the
 /// query.
 pub fn queryCreate(self: *const Database, query_string: [:0]const u8) Error!Query {
-    return .{
-        .query = c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory,
-    };
+    return .init(c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory);
 }
 
 pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, syntax: QUERY_SYNTAX) Error!Query {
@@ -225,9 +295,7 @@ pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, 
 
     try wrap(c.notmuch_query_create_with_syntax(self.database, query_string, @intFromEnum(syntax), &query));
 
-    return .{
-        .query = query orelse return error.OutOfMemory,
-    };
+    return .init(query orelse return error.OutOfMemory);
 }
 
 pub const IndexOpts = struct {

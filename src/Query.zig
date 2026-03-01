@@ -18,19 +18,23 @@ const ThreadsIterator = @import("ThreadsIterator.zig");
 
 query: *c.notmuch_query_t,
 
-/// Return the query_string of this query.
+pub fn init(query: *c.notmuch_query_t) Query {
+    return .{ .query = query };
+}
+
+/// Return the query string of this query.
 pub fn getQueryString(self: *const Query) [:0]const u8 {
     return std.mem.span(c.notmuch_query_get_query_string(self.query));
 }
 
-/// Specify whether to omit excluded results or simply flag them.  By default,
+/// Specify whether to omit excluded results or simply flag them. By default,
 /// this is set to TRUE.
 ///
 /// If set to TRUE or ALL, notmuch_query_search_messages will omit excluded
 /// messages from the results, and notmuch_query_search_threads will
-/// omit threads that match only in excluded messages.  If set to TRUE,
+/// omit threads that match only in excluded messages. If set to TRUE,
 /// notmuch_query_search_threads will include all messages in threads that
-/// match in at least one non-excluded message.  Otherwise, if set to ALL,
+/// match in at least one non-excluded message. Otherwise, if set to ALL,
 /// notmuch_query_search_threads will omit excluded messages from all threads.
 ///
 /// If set to FALSE or FLAG then both notmuch_query_search_messages and
@@ -43,7 +47,7 @@ pub fn getQueryString(self: *const Query) [:0]const u8 {
 /// completely ignored.
 ///
 /// The performance difference when calling notmuch_query_search_messages should
-/// be relatively small (and both should be very fast).  However, in some cases,
+/// be relatively small (and both should be very fast). However, in some cases,
 /// notmuch_query_search_threads is very much faster when omitting excluded
 /// messages as it does not need to construct the threads that only match in
 /// excluded messages.

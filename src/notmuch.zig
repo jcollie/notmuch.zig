@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: MIT
 
+//! Zig bindings for the Notmuch C API.
+//!
 const std = @import("std");
 
 const log = std.log.scoped(.notmuch);
