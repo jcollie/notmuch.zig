@@ -36,9 +36,10 @@
         default = pkgs.mkShell {
           nativeBuildInputs = [
             zig.packages.${pkgs.stdenv.hostPlatform.system}.master
+            pkgs.git-pages-cli
+            pkgs.pinact
             pkgs.pkg-config
             pkgs.reuse
-            pkgs.pinact
           ];
           buildInputs = [
             pkgs.notmuch
