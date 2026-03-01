@@ -15,6 +15,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Set up cache
+        uses: https://git.ocjtech.us/jeff/attic-cache@6fc49fd7a40bb6c54cb5967727d869ac79cdeb3f # v0.0.12
+        with:
+          server: ${{ vars.ATTIC_SERVER }}
+          endpoint: ${{ vars.ATTIC_ENDPOINT }}
+          token: ${{ secrets.ATTIC_TOKEN }}
+          cache: ${{ vars.ATTIC_CACHE }}
+
       - name: Build docs
         run: nix develop -c zig build docs
 
