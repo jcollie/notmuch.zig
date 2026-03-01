@@ -19,8 +19,4 @@ jobs:
         run: nix develop -c zig build docs
 
       - name: Publish docs
-        uses: actions/git-pages@v2
-        with:
-          site: https://git.ocjtech.us/jeff/zig-notmuch
-          token: ${{ forge.token }}
-          source: zig-out/docs
+        run: nix develop -c git-pages-cli https://zig-notmuch.jeff.ocj.page --token ${{ forge.token }} --upload-dir zig-out/docs
