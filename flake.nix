@@ -1,30 +1,46 @@
 {
   inputs = {
     nixpkgs = {
-      url = "nixpkgs/nixos-unstable";
+      url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
     };
-    flake-utils = {
-      url = "github:numtide/flake-utils";
+    zig = {
+      url = "git+https://git.ocjtech.us/jeff/zig-overlay.git";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
     };
   };
 
-  outputs = {
-    nixpkgs,
-    flake-utils,
-    ...
-  }:
-    flake-utils.lib.eachDefaultSystem (
-      system: let
-        pkgs = import nixpkgs {
+  outputs =
+    {
+      nixpkgs,
+      zig,
+      ...
+    }:
+    let
+      lib = nixpkgs.lib;
+      platforms = lib.attrNames zig.packages;
+      makePackages =
+        system:
+        import nixpkgs {
           inherit system;
+          overlays = [ ];
         };
-      in {
-        devShells.default = pkgs.mkShell {
+      forAllSystems = (function: lib.genAttrs platforms (system: function (makePackages system)));
+    in
+    {
+      devShells = forAllSystems (pkgs: {
+        default = pkgs.mkShell {
           nativeBuildInputs = [
-            pkgs.zig_0_14
+            zig.packages.${pkgs.stdenv.hostPlatform.system}.master
+            pkgs.pkg-config
+            pkgs.reuse
+            pkgs.pinact
+          ];
+          buildInputs = [
             pkgs.notmuch
           ];
         };
-      }
-    );
+      });
+    };
 }
