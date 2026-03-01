@@ -5,7 +5,7 @@ const std = @import("std");
 
 const log = std.log.scoped(.notmuch);
 
-const c = @import("c.zig").c;
+const c = @import("c");
 
 const STATUS = @import("enums.zig").STATUS;
 

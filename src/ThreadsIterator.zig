@@ -3,7 +3,7 @@
 
 pub const ThreadsIterator = @This();
 
-const c = @import("c.zig").c;
+const c = @import("c");
 
 const Thread = @import("Thread.zig");
 

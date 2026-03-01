@@ -3,41 +3,36 @@
 
 const std = @import("std");
 
-const c = @import("c.zig").c;
+const c = @import("c");
 
 fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
     @setEvalBranchQuota(24000);
     const info = @typeInfo(c);
-    var count: usize = 0;
-    outer: for (info.@"struct".decls) |decl| {
-        for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
-        if (std.mem.startsWith(u8, decl.name, prefix)) {
-            count += 1;
-        }
-    }
-    var fields: [count]std.builtin.Type.EnumField = undefined;
-    var index: usize = 0;
-    var max: c.notmuch_status_t = 0;
+    var count = 0;
+    var max = 0;
     outer: for (info.@"struct".decls) |decl| {
         for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
         if (std.mem.startsWith(u8, decl.name, prefix)) {
             max = @max(max, @field(c, decl.name));
-            fields[index] = .{
-                .name = decl.name[prefix.len..],
-                .value = @field(c, decl.name),
-            };
+            count += 1;
+        }
+    }
+    var field_names: [count]std.builtin.Type.EnumField = undefined;
+    var field_values: [count]std.math.IntFittingRange(0, max) = undefined;
+    var index = 0;
+    outer: for (info.@"struct".decls) |decl| {
+        for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
+        if (std.mem.cutPrefix(u8, decl.name, prefix)) |suffix| {
+            field_names[index] = suffix;
+            field_values = @field(c, decl.name);
             index += 1;
         }
     }
-    return @Type(
-        .{
-            .@"enum" = .{
-                .tag_type = std.math.IntFittingRange(0, max),
-                .fields = &fields,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        },
+    return @Enum(
+        std.math.IntFittingRange(0, max),
+        .exhaustive,
+        &field_names,
+        &field_values,
     );
 }
 

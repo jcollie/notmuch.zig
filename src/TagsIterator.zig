@@ -5,7 +5,7 @@ const TagsIterator = @This();
 
 const std = @import("std");
 
-const c = @import("c.zig").c;
+const c = @import("c");
 
 tags: ?*c.notmuch_tags_t,
 

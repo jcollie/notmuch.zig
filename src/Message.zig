@@ -6,7 +6,7 @@ const Message = @This();
 const std = @import("std");
 const log = std.log.scoped(.notmuch);
 
-const c = @import("c.zig").c;
+const c = @import("c");
 
 const Error = @import("error.zig").Error;
 const wrap = @import("error.zig").wrap;

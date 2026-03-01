@@ -11,5 +11,5 @@ pub const Message = @import("Message.zig");
 pub const Query = @import("Query.zig");
 
 test {
-    std.testing.refAllDeclsRecursive(@This());
+    std.testing.refAllDecls(@This());
 }

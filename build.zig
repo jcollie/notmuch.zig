@@ -7,23 +7,26 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("notmuch", .{
+    const notmuch_c = b.addTranslateC(.{
+        .root_source_file = b.path("src/notmuch.c"),
+        .link_libc = true,
+        .target = target,
+        .optimize = optimize,
+    });
+    if (b.graph.environ_map.get("NOTMUCH_INCLUDE")) |path| notmuch_c.addIncludePath(.{ .cwd_relative = path });
+
+    const notmuch_zig = b.addModule("notmuch", .{
         .root_source_file = b.path("src/notmuch.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-
-    module.linkSystemLibrary("notmuch", .{});
+    notmuch_zig.addImport("c", notmuch_c.createModule());
+    notmuch_zig.linkSystemLibrary("notmuch", .{});
 
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/notmuch.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = notmuch_zig,
     });
-
-    tests.linkSystemLibrary2("notmuch", .{});
-    tests.linkLibC();
 
     const run_tests = b.addRunArtifact(tests);
 

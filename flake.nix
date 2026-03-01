@@ -43,6 +43,7 @@
           buildInputs = [
             pkgs.notmuch
           ];
+          NOTMUCH_INCLUDE = "${lib.getInclude pkgs.notmuch}/include";
         };
       });
     };
