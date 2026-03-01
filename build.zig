@@ -13,7 +13,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    if (b.graph.environ_map.get("NOTMUCH_INCLUDE")) |path| notmuch_c.addIncludePath(.{ .cwd_relative = path });
+    if (b.graph.environ_map.get("NOTMUCH_INCLUDE")) |path|
+        notmuch_c.addIncludePath(.{ .cwd_relative = path });
 
     const notmuch_zig = b.addModule("notmuch", .{
         .root_source_file = b.path("src/notmuch.zig"),
@@ -32,4 +33,18 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    const notmuch_lib = b.addLibrary(.{
+        .name = "notmuch",
+        .root_module = notmuch_zig,
+    });
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = notmuch_lib.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Build the API docs");
+    docs_step.dependOn(&install_docs.step);
 }

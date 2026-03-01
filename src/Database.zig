@@ -12,34 +12,35 @@ const Error = @import("error.zig").Error;
 const wrap = @import("error.zig").wrap;
 const wrapMessage = @import("error.zig").wrapMessage;
 
-const CONFIG = @import("enums.zig").CONFIG;
-const DATABASE_MODE = @import("enums.zig").DATABASE_MODE;
-const DECRYPT = @import("enums.zig").DECRYPT;
-const QUERY_SYNTAX = @import("enums.zig").QUERY_SYNTAX;
+const enums = @import("enums.zig");
+const CONFIG = enums.CONFIG;
+const DATABASE_MODE = enums.DATABASE_MODE;
+const DECRYPT = enums.DECRYPT;
+const QUERY_SYNTAX = enums.QUERY_SYNTAX;
 
 const Message = @import("Message.zig");
 const Query = @import("Query.zig");
 
 database: *c.notmuch_database_t,
 
-pub fn open(
-    database_path: ?[*:0]const u8,
-    mode: DATABASE_MODE,
+pub const OpenOptions = struct {
     config_path: ?[:0]const u8,
+    database_path: ?[*:0]const u8,
     profile: ?[:0]const u8,
-) Error!Database {
+};
+
+pub fn open(mode: DATABASE_MODE, options: OpenOptions) Error!Database {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
-        log.err("need newer notmuch", .{});
         return error.NotmuchVersion;
     }
 
     var error_message: [*c]u8 = null;
     var database: ?*c.notmuch_database_t = null;
     try wrapMessage(c.notmuch_database_open_with_config(
-        database_path orelse null,
+        options.database_path orelse null,
         @intFromEnum(mode),
-        config_path orelse null,
-        profile orelse null,
+        options.config_path orelse null,
+        options.profile orelse null,
         &database,
         &error_message,
     ), error_message);
@@ -48,13 +49,14 @@ pub fn open(
     };
 }
 
-pub fn create(
-    database_path: ?[*:0]const u8,
+pub const CreateOptions = struct {
     config_path: ?[:0]const u8,
+    database_path: ?[*:0]const u8,
     profile: ?[:0]const u8,
-) Error!Database {
+};
+
+pub fn create(options: CreateOptions) Error!Database {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
-        log.err("need newer notmuch", .{});
         return error.NotmuchVersion;
     }
 
@@ -62,9 +64,9 @@ pub fn create(
     var database: ?*c.notmuch_database_t = null;
     try wrapMessage(
         c.notmuch_database_create_with_config(
-            database_path orelse null,
-            config_path orelse null,
-            profile orelse null,
+            options.database_path orelse null,
+            options.config_path orelse null,
+            options.profile orelse null,
             &database,
             &error_message,
         ),
