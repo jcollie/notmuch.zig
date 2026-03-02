@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 const MessagesIterator = @This();
 

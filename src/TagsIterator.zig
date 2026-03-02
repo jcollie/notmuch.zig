@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Iterator over `notmuch` tags.
 const TagsIterator = @This();
 
 const std = @import("std");

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Zig wrapper around `notmuch` message thread APIs.
 const Thread = @This();
 
 const std = @import("std");
@@ -15,7 +16,7 @@ const TagsIterator = @import("TagsIterator.zig");
 
 thread: *c.notmuch_thread_t,
 
-/// Get the thread ID of 'thread'.
+/// Get the thread ID of `thread`.
 ///
 /// The returned string belongs to 'thread' and as such, should not be modified
 /// by the caller and will only be valid for as long as the thread is valid,
