@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Zig wrapper around the `notmuch` database APIs.
+
 const Database = @This();
 
 const std = @import("std");
@@ -13,8 +15,8 @@ const wrap = @import("error.zig").wrap;
 const wrapMessage = @import("error.zig").wrapMessage;
 
 const enums = @import("enums.zig");
-const CONFIG = enums.CONFIG;
-const DATABASE_MODE = enums.DATABASE_MODE;
+pub const Config = enums.CONFIG;
+pub const Mode = enums.DATABASE_MODE;
 const DECRYPT = enums.DECRYPT;
 const QUERY_SYNTAX = enums.QUERY_SYNTAX;
 const STATUS = enums.STATUS;
@@ -26,30 +28,96 @@ const Query = @import("Query.zig");
 database: *c.notmuch_database_t,
 
 pub const OpenOptions = struct {
-    /// Specify a config file.
+    /// Path to config file.
+    ///
+    /// Config file is key-value, with mandatory sections. See
+    /// **notmuch-config(5)** for more information. The key-value pair
+    /// overrides the corresponding configuration data stored in the
+    /// database (see <em>notmuch_database_get_config</em>)
+    ///
+    /// If `config_path` is `null` use the path specified
+    ///
+    /// - in environment variable `NOTMUCH_CONFIG`, if non-empty
+    ///
+    /// - by  `XDG_CONFIG_HOME`/notmuch/ where
+    ///   `XDG_CONFIG_HOME` defaults to `$HOME/.config`.
+    ///
+    /// - by `$HOME/.notmuch-config`
+    ///
+    /// If `config_path` is "" (empty string) then do not
+    /// open any configuration file.
     config_path: ?[:0]const u8 = null,
-    /// Specify a database path.
+    /// Path to existing database.
+    ///
+    /// A notmuch database is a Xapian database containing appropriate
+    /// metadata.
+    ///
+    /// The database should have been created at some time in the past,
+    /// (not necessarily by this process), by calling
+    /// notmuch_database_create.
+    ///
+    /// If 'database_path' is NULL, use the location specified
+    ///
+    /// - in the environment variable NOTMUCH_DATABASE, if non-empty
+    ///
+    /// - in a configuration file, located as described under 'config_path'
+    ///
+    /// - by $XDG_DATA_HOME/notmuch/$PROFILE where XDG_DATA_HOME defaults
+    ///   to "$HOME/.local/share" and PROFILE as as discussed in
+    ///   'profile'
+    ///
+    /// If 'database_path' is non-NULL, but does not appear to be a Xapian
+    /// database, check for a directory '.notmuch/xapian' below
+    /// 'database_path' (this is the behavior of
+    /// notmuch_database_open_verbose pre-0.32).
     database_path: ?[*:0]const u8 = null,
-    /// Specify a profile.
+    /// Name of profile (configuration/database variant).
+    ///
+    /// If non-`null`, append to the directory / file path determined for
+    /// <em>config_path</em> and <em>database_path</em>.
+    ///
+    /// If `null` then use
+    /// - environment variable `NOTMUCH_PROFILE` if defined,
+    /// - otherwise `"default"` for directories and `""` (empty string) for paths.
     profile: ?[:0]const u8 = null,
 };
 
-/// Open an existing notmuch database.
-pub fn open(mode: DATABASE_MODE, options: OpenOptions) Error!Database {
+pub const OpenError = error{
+    NullPointer,
+    NoConfig,
+    OutOfMemory,
+    FileError,
+    XapianException,
+};
+
+/// Open an existing notmuch database located at `database_path`, using
+/// configuration in `config_path`.
+pub fn open(mode: Mode, options: OpenOptions) OpenError!Database {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
         return error.NotmuchVersion;
     }
 
     var error_message: [*c]u8 = null;
+    defer if (error_message) |m| c.free(m);
+
     var database: ?*c.notmuch_database_t = null;
-    try wrapMessage(c.notmuch_database_open_with_config(
+
+    switch (status(c.notmuch_database_open_with_config(
         options.database_path,
         @intFromEnum(mode),
         options.config_path,
         options.profile,
         &database,
         &error_message,
-    ), error_message);
+    ), error_message)) {
+        .success => {},
+        .null_pointer => return error.NullPointer,
+        .NO_CONFIG => return error.NoConfig,
+        .out_of_memory => return error.OutOfMemory,
+        .file_error => return error.FileError,
+        .xapian_exception => return error.XapianException,
+    }
+
     return .{
         .database = database orelse unreachable,
     };
@@ -178,8 +246,8 @@ pub fn upgrade(self: *const Database, progress_notify: ?UpgradeProgressNotifyCal
 /// called in pairs.
 pub fn beginAtomic(self: *const Database) error{XapianException}!void {
     switch (status(c.notmuch_database_begin_atomic(self.database))) {
-        .SUCCESS => {},
-        .XAPIAN_EXCEPTION => return error.XapianException,
+        .success => {},
+        .xapian_exception => return error.XapianException,
         else => unreachable,
     }
 }
@@ -189,9 +257,9 @@ pub fn beginAtomic(self: *const Database) error{XapianException}!void {
 /// transaction and all previous (non-cancelled) transactions to the database.
 pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException }!void {
     switch (status(c.notmuch_database_begin_atomic(self.database))) {
-        .SUCCESS => {},
-        .UNBALANCED_ATOMIC => return error.UnbalancedAtomic,
-        .XAPIAN_EXCEPTION => return error.XapianException,
+        .success => {},
+        .unbalanced_atomic => return error.UnbalancedAtomic,
+        .xapian_exception => return error.XapianException,
         else => unreachable,
     }
 }
@@ -281,12 +349,12 @@ pub fn configPath(self: *const Database) ?[:0]const u8 {
 /// Returns `null` if `key` is unknown or if no value is known for `key`.
 /// Otherwise returns a string owned by `notmuch` which should not be modified
 /// nor freed by the caller.
-pub fn configGet(self: *const Database, key: CONFIG) Error!?[:0]const u8 {
+pub fn configGet(self: *const Database, key: Config) Error!?[:0]const u8 {
     return std.mem.span(c.notmuch_config_get(self.database, @intFromEnum(key)) orelse return null);
 }
 
 /// Set a configuration value
-pub fn configSet(self: *const Database, key: CONFIG, value: [:0]const u8) Error!void {
+pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!void {
     try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
 }
 
@@ -297,7 +365,7 @@ pub fn configSet(self: *const Database, key: CONFIG, value: [:0]const u8) Error!
 pub fn configGetValues(
     self: *const Database,
     /// configuration key
-    key: CONFIG,
+    key: Config,
 ) ValuesIterator {
     return .{
         .values = c.notmuch_config_get_values(self.database, @intFromEnum(key)),
@@ -315,7 +383,7 @@ pub fn configGetBool(
     /// the database
     self: *const Database,
     /// configuration key
-    key: CONFIG,
+    key: Config,
 ) Error!bool {
     var value: c.notmuch_bool_t = undefined;
     try wrap(c.notmuch_config_get_bool(self.database, @intFromEnum(key), &value));
@@ -329,7 +397,7 @@ pub fn configGetBool(
 pub fn configGetValuesString(
     self: *const Database,
     /// configuration key
-    key: CONFIG,
+    key: Config,
 ) ValuesIterator {
     return .{
         .values = c.notmuch_config_get_values_string(self.database, @intFromEnum(key)),

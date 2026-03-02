@@ -26,7 +26,8 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
     outer: for (info.@"struct".decls) |decl| {
         for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
         if (std.mem.cutPrefix(u8, decl.name, prefix)) |suffix| {
-            field_names[index] = suffix;
+            var buf: [suffix.len]u8 = undefined;
+            field_names[index] = std.ascii.lowerString(&buf, suffix);
             field_values[index] = @field(c, decl.name);
             index += 1;
         }
