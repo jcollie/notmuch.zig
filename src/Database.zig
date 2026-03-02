@@ -22,12 +22,30 @@ const QUERY_SYNTAX = enums.QUERY_SYNTAX;
 const STATUS = enums.STATUS;
 const status = enums.status;
 
+const Directory = @import("Directory.zig");
 const Message = @import("Message.zig");
 const Query = @import("Query.zig");
 
+/// A callback invoked by `compact` to notify the user of the progress of the
+/// compaction process.
+pub const StatusCallback = fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
+
+/// Compact a notmuch database, backing up the original database to the given
+/// path.
+///
+/// The database will be opened in read-write mode during the compaction process
+/// to ensure no writes are made.
+///
+/// If the optional callback function `status_cb` is non-`null`, it will be
+/// called with diagnostic and informational messages. The argument `closure` is
+/// passed verbatim to any callback invoked.
+pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_compact_db(path, backup_path, status_cb, closure));
+}
+
 database: *c.notmuch_database_t,
 
-pub const OpenOptions = struct {
+pub const OpenCreateOptions = struct {
     /// Path to config file.
     ///
     /// Config file is key-value, with mandatory sections. See
@@ -85,118 +103,251 @@ pub const OpenOptions = struct {
 pub const OpenError = error{
     NullPointer,
     NoConfig,
+    NotmuchVersion,
     OutOfMemory,
     FileError,
     XapianException,
 };
 
+pub const OpenResult = union(enum) {
+    ok: Database,
+    err: struct {
+        err: OpenError,
+        msg: [*c]u8,
+
+        pub fn message(self: @This()) ?[:0]const u8 {
+            return std.mem.span(self.msg orelse return null);
+        }
+
+        pub fn deinit(self: @This()) void {
+            c.free(@ptrCast(@constCast(self.msg)));
+        }
+    },
+};
+
 /// Open an existing notmuch database located at `database_path`, using
 /// configuration in `config_path`.
-pub fn open(mode: Mode, options: OpenOptions) OpenError!Database {
+pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
-        return error.NotmuchVersion;
+        return .{
+            .err = .{
+                .err = error.NotmuchVersion,
+                .msg = null,
+            },
+        };
     }
 
-    var error_message: [*c]u8 = null;
-    defer if (error_message) |m| c.free(m);
+    var message: [*c]u8 = null;
 
     var database: ?*c.notmuch_database_t = null;
 
-    switch (status(c.notmuch_database_open_with_config(
-        options.database_path,
+    const err = switch (status(c.notmuch_database_open_with_config(
+        options.database_path orelse null,
         @intFromEnum(mode),
-        options.config_path,
-        options.profile,
+        options.config_path orelse null,
+        options.profile orelse null,
         &database,
-        &error_message,
-    ), error_message)) {
-        .success => {},
-        .null_pointer => return error.NullPointer,
-        .NO_CONFIG => return error.NoConfig,
-        .out_of_memory => return error.OutOfMemory,
-        .file_error => return error.FileError,
-        .xapian_exception => return error.XapianException,
-    }
+        &message,
+    ))) {
+        .success => {
+            return .{
+                .ok = .{
+                    .database = database orelse unreachable,
+                },
+            };
+        },
+        .file_error => error.FileError,
+        .no_config => error.NoConfig,
+        .null_pointer => error.NullPointer,
+        .out_of_memory => error.OutOfMemory,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
+    };
 
     return .{
-        .database = database orelse unreachable,
+        .err = .{
+            .err = err,
+            .msg = message,
+        },
     };
 }
 
-pub const CreateOptions = struct {
-    /// Specify a config file.
-    config_path: ?[:0]const u8 = null,
-    /// Specify a database path.
-    database_path: ?[*:0]const u8 = null,
-    /// Specify a profile.
-    profile: ?[:0]const u8 = null,
+pub const CreateError = error{
+    DatabaseExists,
+    FileError,
+    NoConfig,
+    NotmuchVersion,
+    OutOfMemory,
+    XapianException,
+};
+
+pub const CreateResult = union(enum) {
+    ok: Database,
+    err: struct {
+        err: CreateError,
+        msg: [*c]u8,
+
+        pub fn message(self: @This()) ?[:0]const u8 {
+            return std.mem.span(self.msg orelse return null);
+        }
+
+        pub fn deinit(self: @This()) void {
+            c.free(@ptrCast(@constCast(self.msg)));
+        }
+    },
 };
 
 /// Create a new notmuch database.
-pub fn create(options: CreateOptions) Error!Database {
+pub fn create(options: OpenCreateOptions) CreateResult {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
-        return error.NotmuchVersion;
+        return .{
+            .err = .{
+                .err = error.NotmuchVersion,
+                .msg = null,
+            },
+        };
     }
 
-    var error_message: [*c]u8 = null;
+    var message: [*c]u8 = null;
+
     var database: ?*c.notmuch_database_t = null;
-    try wrapMessage(
-        c.notmuch_database_create_with_config(
-            options.database_path,
-            options.config_path,
-            options.profile,
-            &database,
-            &error_message,
-        ),
-        error_message,
-    );
+
+    const err = switch (status(c.notmuch_database_create_with_config(
+        options.database_path orelse null,
+        options.config_path orelse null,
+        options.profile orelse null,
+        &database,
+        &message,
+    ))) {
+        .success => {
+            return .{
+                .ok = .{
+                    .database = database orelse unreachable,
+                },
+            };
+        },
+        .database_exists => error.DatabaseExists,
+        .file_error => error.FileError,
+        .no_config => error.NoConfig,
+        .out_of_memory => error.OutOfMemory,
+        .xapian_exception => error.XapianException,
+        else => |v| {
+            std.debug.print("{t}\n", .{v});
+            unreachable;
+        },
+    };
+
     return .{
-        .database = database orelse unreachable,
+        .err = .{
+            .err = err,
+            .msg = message,
+        },
     };
 }
 
-/// Close the database.
-pub fn close(self: *const Database) void {
-    _ = c.notmuch_database_close(self.database);
+test create {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+
+    try tmp.dir.createDir(io, "mail", .default_dir);
+    try tmp.dir.createDir(io, "mail/cur", .default_dir);
+    try tmp.dir.createDir(io, "mail/new", .default_dir);
+    try tmp.dir.createDir(io, "mail/tmp", .default_dir);
+
+    const config_path = cfg: {
+        var dir_name_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const len = try tmp.dir.realPath(std.testing.io, &dir_name_buf);
+        const dir_name = dir_name_buf[0..len];
+
+        const database_path = try std.fs.path.joinZ(alloc, &.{ dir_name, "mail" });
+        defer alloc.free(database_path);
+
+        var cfg = try tmp.dir.createFile(io, "config", .{});
+        defer cfg.close(io);
+
+        var buf: [64]u8 = undefined;
+        var file_writer = cfg.writer(io, &buf);
+        const writer = &file_writer.interface;
+
+        try writer.print(
+            \\[database]
+            \\path={s}
+            \\mail_root={s}
+            \\[user]
+            \\primary_email=zig@example.org
+            \\[new]
+            \\[search]
+            \\[maildir]
+            \\
+        ,
+            .{
+                database_path,
+                database_path,
+            },
+        );
+        try writer.flush();
+
+        break :cfg try std.fs.path.joinZ(alloc, &.{ dir_name, "config" });
+    };
+    defer alloc.free(config_path);
+
+    const r = create(.{ .config_path = config_path });
+    defer switch (r) {
+        .ok => |db| db.destroy() catch {},
+        .err => |e| e.deinit(),
+    };
+    try std.testing.expect(r == .ok);
+}
+
+pub const CloseError = error{XapianException};
+
+/// Commit changes and close the given notmuch database.
+///
+/// After `close` has been called, calls to other functions on
+/// objects derived from this database may either behave as if the database had
+/// not been closed (e.g., if the required data has been cached) or may fail
+/// with a NOTMUCH_STATUS_XAPIAN_EXCEPTION. The only further operation permitted
+/// on the database itself is to call notmuch_database_destroy.
+///
+/// `close` can be called multiple times. Later calls have no
+/// effect.
+///
+/// For writable databases, `close` commits all changes to disk before closing
+/// the database, unless the caller is currently in an atomic section (there was
+/// a `beginAtomic` without a matching `endAtomic`). In this case changes since
+/// the last commit are discarded. See `endAtomic` for more information.
+pub fn close(self: *const Database) CloseError!void {
+    switch (status(c.notmuch_database_close(self.database))) {
+        .success => {},
+        .xapian_exception => return error.XapianException,
+        else => unreachable,
+    }
 }
 
 /// Destroy the notmuch database, closing it if necessary and freeing all
 /// associated resources.
 ///
-/// Return value as in notmuch_database_close if the database was open;
-/// notmuch_database_destroy itself has no failure modes.
+/// Return value as in `close` if the database was open; `destroy` itself has no
+/// failure modes.
 pub fn destroy(self: *const Database) Error!void {
-    try wrap(c.notmuch_database_destroy(self.database));
+    switch (status(c.notmuch_database_destroy(self.database))) {
+        .success => {},
+        .xapian_exception => return error.XapianException,
+        else => unreachable,
+    }
 }
 
-pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!void {
-    try wrap(c.notmuch_database_index_file(
-        self.database,
-        filename,
-        if (indexopts) |i| i.indexopts else null,
-        null,
-    ));
-}
-
-/// A callback invoked by Database.compact to notify the user of the
-/// progress of the compaction process.
-pub const StatusCallback = fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
-
-/// Compact a notmuch database, backing up the original database to the given
-/// path.
+/// Return the database path of the given database.
 ///
-/// The database will be opened in read-write mode during the compaction process
-/// to ensure no writes are made.
-///
-/// If the optional callback function `status_cb` is non-`null`, it will be
-/// called with diagnostic and informational messages. The argument `closure` is
-/// passed verbatim to any callback invoked.
-pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
-    try wrap(c.notmuch_database_compact(path, backup_path, status_cb, closure));
+/// The return value is a string owned by notmuch so should not be modified nor
+/// freed by the caller.
+pub fn getPath(self: *const Database) ?[:0]const u8 {
+    return std.mem.span(c.notmuch_database_get_path(self.database) orelse return null);
 }
 
 /// Return the database format version of the database.
-pub fn getVersion(self: *const Database) error{FormatVersionError}!c_uint {
+pub fn getVersion(self: *const Database) error{FormatVersionError}!u32 {
     const version = c.notmuch_database_get_version(self.database);
     if (version == 0) return error.FormatVersionError;
     return version;
@@ -295,6 +446,31 @@ pub fn getRevision(self: *const Database) Revision {
         .revision = revision,
         .uuid = std.mem.span(uuid),
     };
+}
+
+pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!Directory {
+    var directory: ?*c.notmuch_directory_t = null;
+
+    switch (status(c.notmuch_database_get_directory(self.database, path, &directory))) {
+        .success => {},
+        .null_pointer => return error.NullPointer,
+        .xapian_exception => return error.XapianException,
+        .upgrade_required => return error.UpgradeRequired,
+        else => unreachable,
+    }
+
+    return .{
+        .directory = directory orelse unreachable,
+    };
+}
+
+pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!void {
+    try wrap(c.notmuch_database_index_file(
+        self.database,
+        filename,
+        if (indexopts) |i| i.indexopts else null,
+        null,
+    ));
 }
 
 pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!Message {
@@ -491,3 +667,7 @@ pub const PairsIterator = struct {
         c.notmuch_config_pairs_destroy(pairs);
     }
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}
