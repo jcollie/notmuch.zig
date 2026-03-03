@@ -19,11 +19,13 @@ const enums = @import("enums.zig");
 const Error = @import("error.zig").Error;
 const IndexOpts = @import("IndexOpts.zig");
 const Message = @import("Message.zig");
+const PairsIterator = @import("PairsIterator.zig");
 const Query = @import("Query.zig");
 const QuerySyntax = enums.QuerySyntax;
 const status = enums.status;
 const Status = enums.Status;
 const TagsIterator = @import("TagsIterator.zig");
+const ValuesIterator = @import("ValuesIterator.zig");
 const wrap = @import("error.zig").wrap;
 const wrapMessage = @import("error.zig").wrapMessage;
 
@@ -749,18 +751,6 @@ pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, 
     return .init(query orelse return error.OutOfMemory);
 }
 
-pub fn getDefaultIndexOpts(self: *const Database) ?IndexOpts {
-    return .{
-        .indexopts = c.notmuch_database_get_default_indexopts(self.database) orelse return null,
-    };
-}
-
-///
-pub fn configPath(self: *const Database) ?[:0]const u8 {
-    const config = c.notmuch_config_path(self.database);
-    return std.mem.span(config orelse return null);
-}
-
 /// Get a configuration value from an open database.
 ///
 /// This value reflects all configuration information given at the time
@@ -773,7 +763,7 @@ pub fn configGet(self: *const Database, key: Config) Error!?[:0]const u8 {
     return std.mem.span(c.notmuch_config_get(self.database, @intFromEnum(key)) orelse return null);
 }
 
-/// Set a configuration value
+/// Set config `key` to `value`.
 pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!void {
     try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
 }
@@ -786,9 +776,31 @@ pub fn configGetValues(
     self: *const Database,
     /// configuration key
     key: Config,
-) ValuesIterator {
+) ?ValuesIterator {
     return .{
-        .values = c.notmuch_config_get_values(self.database, @intFromEnum(key)),
+        .values = c.notmuch_config_get_values(self.database, @intFromEnum(key)) orelse return null,
+    };
+}
+
+/// Returns an iterator for a ';'-delimited list of configuration values
+///
+/// These values reflect all configuration information given at the
+/// time the database was opened.
+pub fn configGetValuesString(
+    self: *const Database,
+    /// configuration key
+    key: [:0]const u8,
+) ?ValuesIterator {
+    return .{
+        .values = c.notmuch_config_get_values_string(self.database, key) orelse return null,
+    };
+}
+
+/// Returns an iterator for a (key, value) configuration pairs. Returns `null`
+/// in case of error.
+pub fn configGetPairs(self: *const Database, prefix: [:0]const u8) ?PairsIterator {
+    return .{
+        .pairs = c.notmuch_config_get_pairs(self.database, prefix) orelse return null,
     };
 }
 
@@ -800,7 +812,7 @@ pub fn configGetValues(
 /// Returns IllegalArgument error if either key is unknown or the
 /// corresponding value does not convert to boolean.
 pub fn configGetBool(
-    /// the database
+    /// The database
     self: *const Database,
     /// configuration key
     key: Config,
@@ -810,64 +822,24 @@ pub fn configGetBool(
     return value != 0;
 }
 
-/// Returns an iterator for a ';'-delimited list of configuration values
-///
-/// These values reflect all configuration information given at the
-/// time the database was opened.
-pub fn configGetValuesString(
-    self: *const Database,
-    /// configuration key
-    key: Config,
-) ValuesIterator {
-    return .{
-        .values = c.notmuch_config_get_values_string(self.database, @intFromEnum(key)),
-    };
+/// Return the path of the config file loaded. Returns `null` if no config file
+/// was loaded.
+pub fn configPath(self: *const Database) ?[:0]const u8 {
+    return std.mem.span(c.notmuch_config_path(self.database) orelse return null);
 }
 
-pub const ValuesIterator = struct {
-    values: ?*c.notmuch_config_values_t,
-
-    pub fn next(self: *ValuesIterator) ?[:0]const u8 {
-        const values = self.values orelse return null;
-        if (c.notmuch_config_values_valid(values) == 0) return null;
-        defer c.notmuch_config_values_move_to_next(values);
-        return std.mem.span(c.notmuch_config_values_get(values) orelse unreachable);
-    }
-
-    pub fn start(self: *ValuesIterator) void {
-        const values = self.values orelse return;
-        c.notmuch_config_values_start(values);
-    }
-
-    pub fn deinit(self: *ValuesIterator) void {
-        const values = self.values orelse return;
-        c.notmuch_config_values_destroy(values);
-    }
-};
-
-pub const PairsIterator = struct {
-    pairs: ?*c.notmuch_config_pairs_t,
-
-    pub const Pair = struct {
-        key: [:0]const u8,
-        value: [:0]const u8,
+/// Get the current default indexing options for a given database.
+///
+/// This object will survive until the database itself is destroyed, but the
+/// caller may also release it earlier with `IndexOpts.deinit`.
+///
+/// This object represents a set of options on how a message can be added to the
+/// index. At the moment it is a featureless stub.
+pub fn getDefaultIndexOpts(self: *const Database) ?IndexOpts {
+    return .{
+        .indexopts = c.notmuch_database_get_default_indexopts(self.database) orelse return null,
     };
-
-    pub fn next(self: *PairsIterator) ?Pair {
-        const pairs = self.pairs orelse return null;
-        if (c.notmuch_config_pairs_valid(pairs) == 0) return null;
-        defer c.notmuch_config_pairs_move_to_next(pairs);
-        return .{
-            .key = std.mem.span(c.notmuch_config_pairs_key(pairs) orelse unreachable),
-            .value = std.mem.span(c.notmuch_config_pairs_value(pairs) orelse unreachable),
-        };
-    }
-
-    pub fn deinit(self: *PairsIterator) void {
-        const pairs = self.pairs orelse return;
-        c.notmuch_config_pairs_destroy(pairs);
-    }
-};
+}
 
 test {
     std.testing.refAllDecls(@This());

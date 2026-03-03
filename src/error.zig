@@ -3,11 +3,8 @@
 
 const std = @import("std");
 
-const log = std.log.scoped(.notmuch);
-
 const c = @import("c");
 
-const Status = @import("enums.zig").Status;
 const status = @import("enums.zig").status;
 
 pub const Error = error{
@@ -86,14 +83,6 @@ pub const Error = error{
     /// A Xapian exception occurred.
     XapianException,
 };
-
-pub fn wrapMessage(rc: c.notmuch_status_t, message: [*c]const u8) Error!void {
-    if (message) |msg| {
-        log.err("{s}", .{msg});
-        c.free(@ptrCast(@constCast(msg)));
-    }
-    try wrap(rc);
-}
 
 pub fn wrap(rc: c.notmuch_status_t) Error!void {
     return switch (status(rc)) {

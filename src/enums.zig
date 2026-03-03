@@ -73,7 +73,31 @@ fn checkEnum(comptime E: type, comptime prefix: []const u8, comptime skips: []co
 }
 
 /// Configuration keys known to notmuch.
-pub const Config = generateEnum("NOTMUCH_CONFIG_", &.{ "NOTMUCH_CONFIG_FIRST", "NOTMUCH_CONFIG_LAST" });
+pub const Config = enum(u4) {
+    database_path = c.NOTMUCH_CONFIG_DATABASE_PATH,
+    mail_root = c.NOTMUCH_CONFIG_MAIL_ROOT,
+    hook_dir = c.NOTMUCH_CONFIG_HOOK_DIR,
+    backup_dir = c.NOTMUCH_CONFIG_BACKUP_DIR,
+    exclude_tags = c.NOTMUCH_CONFIG_EXCLUDE_TAGS,
+    new_tags = c.NOTMUCH_CONFIG_NEW_TAGS,
+    new_ignore = c.NOTMUCH_CONFIG_NEW_IGNORE,
+    sync_maildir_flags = c.NOTMUCH_CONFIG_SYNC_MAILDIR_FLAGS,
+    primary_email = c.NOTMUCH_CONFIG_PRIMARY_EMAIL,
+    other_email = c.NOTMUCH_CONFIG_OTHER_EMAIL,
+    user_name = c.NOTMUCH_CONFIG_USER_NAME,
+    autocommit = c.NOTMUCH_CONFIG_AUTOCOMMIT,
+    extra_headers = c.NOTMUCH_CONFIG_EXTRA_HEADERS,
+    index_as_text = c.NOTMUCH_CONFIG_INDEX_AS_TEXT,
+    authors_separator = c.NOTMUCH_CONFIG_AUTHORS_SEPARATOR,
+    authors_matched_separator = c.NOTMUCH_CONFIG_AUTHORS_MATCHED_SEPARATOR,
+    // git_fail_on_missing = c.NOTMUCH_CONFIG_GIT_FAIL_ON_MISSING,
+    // git_metadata_prefix = c.NOTMUCH_CONFIG_GIT_METADATA_PREFIX,
+    // git_ref = c.NOTMUCH_CONFIG_GIT_REF,
+
+    comptime {
+        checkEnum(@This(), "NOTMUCH_CONFIG_", &.{ "NOTMUCH_CONFIG_FIRST", "NOTMUCH_CONFIG_LAST" });
+    }
+};
 
 pub const DatabaseMode = enum(u1) {
     read_only = c.NOTMUCH_DATABASE_MODE_READ_ONLY,
@@ -84,7 +108,17 @@ pub const DatabaseMode = enum(u1) {
     }
 };
 
-pub const Decrypt = generateEnum("NOTMUCH_DECRYPT_", &.{});
+/// Stating a policy about how to decrypt messages.
+pub const Decrypt = enum(u2) {
+    false = c.NOTMUCH_DECRYPT_FALSE,
+    true = c.NOTMUCH_DECRYPT_TRUE,
+    auto = c.NOTMUCH_DECRYPT_AUTO,
+    nostash = c.NOTMUCH_DECRYPT_NOSTASH,
+
+    comptime {
+        checkEnum(@This(), "NOTMUCH_DECRYPT_", &.{});
+    }
+};
 
 /// Exclude values for `Query.setOmitExcluded`
 pub const Exclude = generateEnum("NOTMUCH_EXCLUDE_", &.{});
@@ -100,6 +134,19 @@ pub const MessageFlag = enum(u2) {
     comptime {
         checkEnum(@This(), "NOTMUCH_MESSAGE_FLAG_", &.{});
     }
+};
+
+pub const MaildirFlag = enum(u8) {
+    /// Adds the "draft" tag to the message.
+    D = 'D',
+    /// Adds the "flagged" tag to the message.
+    F = 'F',
+    /// Adds the "passed" tag to the message.
+    P = 'P',
+    /// Adds the "replied" tag to the message.
+    R = 'R',
+    /// Removes the "unread" tag from the message.
+    S = 'S',
 };
 
 /// query syntax
@@ -180,12 +227,16 @@ pub const Status = enum(u5) {
     /// read anymore.
     operation_invalidated = c.NOTMUCH_STATUS_OPERATION_INVALIDATED,
 
+    pub fn init(rc: c.notmuch_status_t) Status {
+        return @enumFromInt(rc);
+    }
+
     comptime {
         checkEnum(@This(), "NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});
     }
 };
 
 /// Convenience function to convert a notmuch API return code to a Status enum.
-pub fn status(rc: c_uint) Status {
-    return @enumFromInt(rc);
+pub fn status(rc: c.notmuch_status_t) Status {
+    return .init(rc);
 }

@@ -5,43 +5,30 @@
 //! lists of filenames.
 pub const FilenamesIterator = @This();
 
+const std = @import("std");
 const c = @import("c");
-
-const status = @import("enums.zig").status;
 
 filenames: ?*c.notmuch_filenames_t,
 
-pub const NextError = error{
-    /// Iteration failed to allocate memory.
-    OutOfMemory,
-    /// Iteration was invalidated by the database. Re-open the database and
-    /// try again.
-    OperationInvalidated,
-};
-
-pub fn next(self: *FilenamesIterator) NextError!?[:0]const u8 {
-    const threads = self.threads orelse return null;
-    return switch (status(c.notmuch_threads_status(threads))) {
-        .success => thread: {
-            if (c.notmuch_threads_valid(threads) != 0) break :thread null;
-            defer c.notmuch_threads_move_to_next(threads);
-            break :thread .{
-                .thread = c.notmuch_threads_get(threads) orelse unreachable,
-            };
-        },
-        .iterator_exhausted => return null,
-        .operation_invalidated => error.OperationInvalidated,
-        .out_of_memory => error.OutOfMemory,
-        else => unreachable,
+/// Get the next filename from `FilenamesIterator` as a string.
+///
+/// Note: The returned string belongs to `filenames` and has a lifetime
+/// identical to it (and the object to which it ultimately belongs).
+pub fn next(self: *FilenamesIterator) ?[:0]const u8 {
+    const filenames = self.filenames orelse return null;
+    if (c.notmuch_threads_valid(filenames) != 0) return null;
+    defer c.notmuch_threads_move_to_next(filenames);
+    return .{
+        .thread = std.mem.span(c.notmuch_threads_get(filenames) orelse unreachable),
     };
 }
 
-/// Deinitialize a `ThreadIterator` object.
+/// Deinitialize a `FilenamesIterator` object.
 ///
-/// It's not strictly necessary to call this function. All memory from
-/// the `ThreadIterator` object will be reclaimed when the
-/// containing query object is deinitialized.
+/// It's not strictly necessary to call this function. All memory from the
+/// `FilenamesIterator` object will be reclaimed when the containing object
+/// is deinitialized.
 pub fn deinit(self: *FilenamesIterator) void {
-    const threads = self.threads orelse return;
-    c.notmuch_threads_destroy(threads);
+    const filenames = self.filenames orelse return;
+    c.notmuch_filenames_destroy(filenames);
 }
