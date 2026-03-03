@@ -17,7 +17,7 @@ const wrapMessage = @import("error.zig").wrapMessage;
 const enums = @import("enums.zig");
 pub const Config = enums.CONFIG;
 pub const Mode = enums.DATABASE_MODE;
-const DECRYPT = enums.DECRYPT;
+const Decrypt = enums.DECRYPT;
 const QUERY_SYNTAX = enums.QUERY_SYNTAX;
 const STATUS = enums.STATUS;
 const status = enums.status;
@@ -29,19 +29,6 @@ const Query = @import("Query.zig");
 /// A callback invoked by `compact` to notify the user of the progress of the
 /// compaction process.
 pub const StatusCallback = fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
-
-/// Compact a notmuch database, backing up the original database to the given
-/// path.
-///
-/// The database will be opened in read-write mode during the compaction process
-/// to ensure no writes are made.
-///
-/// If the optional callback function `status_cb` is non-`null`, it will be
-/// called with diagnostic and informational messages. The argument `closure` is
-/// passed verbatim to any callback invoked.
-pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
-    try wrap(c.notmuch_database_compact_db(path, backup_path, status_cb, closure));
-}
 
 database: *c.notmuch_database_t,
 
@@ -324,6 +311,15 @@ pub fn close(self: *const Database) CloseError!void {
         else => unreachable,
     }
 }
+/// Compact the notmuch database, backing up the original database to the given
+/// path.
+///
+/// If the optional callback function `status_cb` is non-`null`, it will be
+/// called with diagnostic and informational messages. The argument `closure` is
+/// passed verbatim to any callback invoked.
+pub fn compact(self: *const Database, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_compact_db(self.database, backup_path, status_cb, closure));
+}
 
 /// Destroy the notmuch database, closing it if necessary and freeing all
 /// associated resources.
@@ -355,13 +351,13 @@ pub fn getVersion(self: *const Database) error{FormatVersionError}!u32 {
 
 /// Can the database be upgraded to a newer database version?
 ///
-/// If this function returns TRUE, then the caller may call
-/// notmuch_database_upgrade to upgrade the database. If the caller does
-/// not upgrade an out-of-date database, then some functions may fail with
-/// NOTMUCH_STATUS_UPGRADE_REQUIRED. This always returns FALSE for a read-only
-/// database because there's no way to upgrade a read-only database.
+/// If this function returns `true`, then the caller may call `upgrade`
+/// to upgrade the database. If the caller does not upgrade an out-of-date
+/// database, then some functions may fail with `UpgradeRequired`. This always
+/// returns `false` for a read-only database because there's no way to upgrade a
+/// read-only database.
 ///
-/// Also returns FALSE if an error occurs accessing the database.
+/// Also returns `false` if an error occurs accessing the database.
 pub fn needsUpgrade(self: *const Database) bool {
     return c.notmuch_database_needs_upgrade(self.database) != 0;
 }
@@ -370,30 +366,30 @@ pub const UpgradeProgressNotifyCallback = fn (closure: ?*anyopaque, progress: f6
 
 /// Upgrade the current database to the latest supported version.
 ///
-/// This ensures that all current notmuch functionality will be available on the
-/// database. After opening a database in read-write mode, it is recommended
-/// that clients check if an upgrade is needed (Database.needsUpgrade) and
-/// if so, upgrade with this function before making any modifications. If
-/// Database.needsUpgrade returns FALSE, this will be a no-op.
+/// This ensures that all current notmuch functionality will be available
+/// on the database. After opening a database in read-write mode, it is
+/// recommended that clients check if an upgrade is needed (`needsUpgrade`)
+/// and if so, upgrade with this function before making any modifications. If
+/// `needsUpgrade` returns `false`, this will be a no-op.
 ///
-/// The optional `progress_notify` callback can be used by the caller to provide
-/// progress indication to the user. If non-`null` it will be called periodically
-/// with `progress` as a floating-point value in the range of [0.0 .. 1.0]
-/// indicating the progress made so far in the upgrade process. The argument
-/// `closure` is passed verbatim to any callback invoked.
+/// The optional `progress_notify` callback can be used by the caller to
+/// provide progress indication to the user. If non-`null` it will be called
+/// periodically with `progress` as a floating-point value in the range of [0.0
+/// .. 1.0] indicating the progress made so far in the upgrade process. The
+/// argument `closure` is passed verbatim to any callback invoked.
 pub fn upgrade(self: *const Database, progress_notify: ?UpgradeProgressNotifyCallback, closure: ?*anyopaque) Error!void {
     try wrap(c.notmuch_database_upgrade(self.database, progress_notify, closure));
 }
 
 /// Begin an atomic database operation.
 ///
-/// Any modifications performed between a successful begin and a
-/// notmuch_database_end_atomic will be applied to the database atomically.
-/// Note that, unlike a typical database transaction, this only ensures
-/// atomicity, not durability; neither begin nor end necessarily flush
-/// modifications to disk.
+/// Any modifications performed between a successful `beginAtomic` and a
+/// `endAtomic` will be applied to the database atomically. Note that, unlike a
+/// typical database transaction, this only ensures atomicity, not durability;
+/// neither `beginAtomic` nor `endAtomic` necessarily flush modifications to
+/// disk.
 ///
-/// Atomic sections may be nested. begin_atomic and end_atomic must always be
+/// Atomic sections may be nested. `beginAtomic` and `endAtomic` must always be
 /// called in pairs.
 pub fn beginAtomic(self: *const Database) error{XapianException}!void {
     switch (status(c.notmuch_database_begin_atomic(self.database))) {
@@ -416,7 +412,17 @@ pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException
 }
 
 pub const Revision = struct {
+    /// The database revision number increases monotonically with each commit
+    /// to the database. Hence, all messages and message changes committed
+    /// to the database (that is, visible to readers) have a last modification
+    /// revision <= the committed database revision. Any messages committed
+    /// in the future will be assigned a modification revision > the committed
+    /// database revision.
     revision: u64,
+    /// The UUID is an opaque string that uniquely identifies this database.
+    /// Two revision numbers are only comparable if they have the same database
+    /// UUID. The string `uuid` is owned by notmuch and should not be freed or
+    /// modified by the user.
     uuid: []const u8,
 
     pub fn compare(self: Revision, other: Revision) error{DatabaseMismatch}!enum { lt, eq, gt } {
@@ -437,7 +443,7 @@ pub const Revision = struct {
 ///
 /// The UUID is a opaque string that uniquely identifies this database. Two
 /// revision numbers are only comparable if they have the same database UUID.
-/// The string 'uuid' is owned by notmuch and should not be freed or modified by
+/// The string `uuid` is owned by notmuch and should not be freed or modified by
 /// the user.
 pub fn getRevision(self: *const Database) Revision {
     var uuid: [*c]const u8 = undefined;
@@ -447,62 +453,223 @@ pub fn getRevision(self: *const Database) Revision {
         .uuid = std.mem.span(uuid),
     };
 }
-
-pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!Directory {
+/// Retrieve a directory object from the database for `path`.
+///
+/// Here, 'path' should be a path relative to the path of `database` (see
+/// `getPath`), or else should be an absolute path with initial components that
+/// match the path of `database`.
+///
+/// If this directory object does not exist in the database, this returns
+/// `null`.
+///
+/// Otherwise the returned directory object is owned by the database and as
+/// such, will only be valid until `destroy` is called.
+pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!?Directory {
     var directory: ?*c.notmuch_directory_t = null;
 
     switch (status(c.notmuch_database_get_directory(self.database, path, &directory))) {
         .success => {},
         .null_pointer => return error.NullPointer,
-        .xapian_exception => return error.XapianException,
         .upgrade_required => return error.UpgradeRequired,
+        .xapian_exception => return error.XapianException,
         else => unreachable,
     }
 
     return .{
-        .directory = directory orelse unreachable,
+        .directory = directory orelse return null,
     };
 }
 
-pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!void {
-    try wrap(c.notmuch_database_index_file(
+pub const IndexFileError = error{
+    /// An error occurred trying to open the file, (such as permission denied, or
+    /// file not found, etc.). Nothing added to the database.
+    FileError,
+    /// The contents of filename don't look like an email message. Nothing added
+    /// to the database.
+    FileNotEmail,
+    /// Database was opened in read-only mode so no message can be added.
+    ReadOnlyDatabase,
+    /// The caller must upgrade the database to use this function.
+    UpgradeRequired,
+};
+
+/// Add a message file to a database, indexing it for retrieval by future
+/// searches.  If a message already exists with the same message ID as the
+/// specified file, their indexes will be merged, and this new filename will
+/// also be associated with the existing message.
+///
+/// Here, `filename` should be a path relative to the path of `database` (see
+/// `getPath`), or else should be an absolute filename with initial components
+/// that match the path of `database`.
+///
+/// The file should be a single mail message (not a multi-message mbox) that is
+/// expected to remain at its current location, (since the notmuch database will
+/// reference the filename, and will not copy the entire contents of the file.
+///
+/// If another message with the same message ID already exists in the database,
+/// rather than creating a new message, this adds the search terms from the
+/// identified file to the existing message's index, and adds `filename` to the
+/// list of filenames known for the message.
+///
+/// The `indexopts` parameter can be `null` (meaning, use the indexing
+/// defaults from the database), or can be an explicit choice of
+/// indexing options that should govern the indexing of this specific
+/// `filename`.
+///
+/// Note that this does not synchronise Maildir flags to notmuch flags,
+/// regardless of the value of `maildir.synchronize_flags`. Future calls to
+/// notmuch-new(1) will also not synchronise flags, since the file's current
+/// mtime shall be recorded as indexed. If flags ought to be synchronised,
+/// explicitly call notmuch_message_maildir_flags_to_tags.
+pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) IndexFileError!void {
+    return switch (status(c.notmuch_database_index_file(
         self.database,
         filename,
         if (indexopts) |i| i.indexopts else null,
         null,
-    ));
+    ))) {
+        .success => {},
+        .duplicate_message_id => {},
+        .file_error => error.FileError,
+        .file_not_email => error.FileNotEmail,
+        .read_only_database => error.ReadOnlyDatabase,
+        .upgrade_required => error.UpgradeRequired,
+        else => unreachable,
+    };
 }
 
+/// Add a message file to a database, indexing it for retrieval by future
+/// searches, and return a message object. If a message already exists with the
+/// same message ID as the specified file, their indexes will be merged, and
+/// this new filename will also be associated with the existing message.
+///
+/// Here, `filename` should be a path relative to the path of `database` (see
+/// `getPath`), or else should be an absolute filename with initial components
+/// that match the path of `database`.
+///
+/// The file should be a single mail message (not a multi-message mbox) that is
+/// expected to remain at its current location, (since the notmuch database will
+/// reference the filename, and will not copy the entire contents of the file.
+///
+/// If another message with the same message ID already exists in the database,
+/// rather than creating a new message, this adds the search terms from the
+/// identified file to the existing message's index, and adds `filename` to the
+/// list of filenames known for the message.
+///
+/// The `indexopts` parameter can be `null` (meaning, use the indexing
+/// defaults from the database), or can be an explicit choice of
+/// indexing options that should govern the indexing of this specific
+/// `filename`.
+///
+/// On successful return, a message object will be returned that can be used for
+/// things such as adding tags to the just-added message. The user should call
+/// `Message.destroy` when done with the message.
+///
+/// Note that this does not synchronise Maildir flags to notmuch flags,
+/// regardless of the value of maildir.synchronize_flags. Future calls to
+/// notmuch-new(1) will also not synchronise flags, since the file's current
+/// mtime shall be recorded as indexed. If flags ought to be synchronised,
+/// explicitly call notmuch_message_maildir_flags_to_tags.
 pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!Message {
     var message: ?*c.notmuch_message_t = null;
-    wrap(c.notmuch_database_index_file(
+    return switch (status(c.notmuch_database_index_file(
         self.database,
         filename,
         if (indexopts) |i| i.indexopts else null,
         &message,
-    )) catch |err| switch (err) {
-        error.DuplicateMessageID => return .{
+    ))) {
+        .success => .{
+            .duplicate = false,
+            .message = message orelse unreachable,
+        },
+        .duplicate_message_id => .{
             .duplicate = true,
             .message = message orelse unreachable,
         },
-        else => |e| return e,
-    };
-    return .{
-        .duplicate = false,
-        .message = message orelse unreachable,
+        .file_error => error.FileError,
+        .file_not_email => error.FileNotEmail,
+        .read_only_database => error.ReadOnlyDatabase,
+        .upgrade_required => error.UpgradeRequired,
+        else => unreachable,
     };
 }
 
-pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) Error!Message {
+pub const RemoveMessageError = error{
+    /// This filename was removed but the message persists in the database with at
+    /// least one other filename.
+    DuplicateMessageID,
+    /// Database was opened in read-only mode so no message can be removed.
+    ReadOnlyDatabase,
+    /// The caller must upgrade the database to use this function.
+    UpgradeRequired,
+    /// A Xapian exception occurred, message not removed.
+    XapianException,
+};
+
+/// Remove a message filename from the given notmuch database. If the message
+/// has no more filenames, remove the message.
+///
+/// If the same message (as determined by the message ID) is still available
+/// via other filenames, then the message will persist in the database for those
+/// filenames. When the last filename is removed for a particular message, the
+/// database content for that message will be entirely removed.
+pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessageError!void {
+    return switch (status(c.notmuch_database_remove_message(self.database, filename))) {
+        .success => {},
+        .duplicate_message_id => error.DuplicateMessageID,
+        .read_only_database => error.ReadOnlyDatabase,
+        .upgrade_required => error.UpgradeRequired,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
+    };
+}
+
+pub const FindMessageError = error{
+    /// Out of memory creating message object.
+    OutOfMemory,
+    /// A Xapian exception occurred.
+    XapianException,
+};
+
+/// Find a message with the given message ID.
+///
+/// If a message with the given message ID is found then a message object
+/// will be returned. The caller should call `Message.deinit` when done with
+/// the message.
+///
+/// If a message with the given message ID is not found then `null` is
+/// returned.
+pub fn findMessage(self: *const Database, message_id: [:0]const u8) FindMessageError!?Message {
     var message: ?*c.notmuch_message_t = null;
-    try wrap(c.notmuch_database_find_message_by_filename(self.database, filename, &message));
-    return .{
-        .message = message orelse unreachable,
+    return switch (status(c.notmuch_database_find_message(self.database, message_id, &message))) {
+        .success => .{
+            .message = message orelse return null,
+        },
+        .null_pointer => unreachable,
+        .out_of_memory => error.OutOfMemory,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
     };
 }
-
-pub fn removeMessage(self: *const Database, filename: [:0]const u8) Error!void {
-    try wrap(c.notmuch_database_remove_message(self.database, filename));
+/// Find a message with the given filename.
+///
+/// If the database contains a message with the given filename then a message
+/// object is returned. The caller should call `Message.deinit` when done with
+/// the message.
+///
+/// If a message with the given filename is not found then `null` is
+/// returned.
+pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) FindMessageError!?Message {
+    var message: ?*c.notmuch_message_t = null;
+    return switch (status(c.notmuch_database_find_message_by_filename(self.database, filename, &message))) {
+        .success => .{
+            .message = message orelse return null,
+        },
+        .null_pointer => unreachable,
+        .out_of_memory => error.OutOfMemory,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
+    };
 }
 
 pub fn getDefaultIndexOpts(self: *const Database) ?IndexOpts {
@@ -610,11 +777,11 @@ pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, 
 pub const IndexOpts = struct {
     indexopts: *c.notmuch_indexopts_t,
 
-    pub fn getDecryptPolicy(self: IndexOpts) DECRYPT {
+    pub fn getDecryptPolicy(self: IndexOpts) Decrypt {
         return @enumFromInt(c.notmuch_indexopts_get_decrypt_policy(self.indexopts));
     }
 
-    pub fn setDecryptPolicy(self: IndexOpts, decrypt_policy: DECRYPT) Error!void {
+    pub fn setDecryptPolicy(self: IndexOpts, decrypt_policy: Decrypt) Error!void {
         try wrap(c.notmuch_indexopts_set_decrypt_policy(self.indexopts, @intFromEnum(decrypt_policy)));
     }
 

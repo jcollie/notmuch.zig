@@ -5,12 +5,27 @@
 //!
 const std = @import("std");
 
-const log = std.log.scoped(.notmuch);
+const c = @import("c");
 
 pub const Error = @import("error.zig").Error;
 pub const Database = @import("Database.zig");
 pub const Message = @import("Message.zig");
 pub const Query = @import("Query.zig");
+
+const wrap = @import("error.zig").wrap;
+
+/// Compact a notmuch database, backing up the original database to the given
+/// path.
+///
+/// The database will be opened in read-write mode during the compaction process
+/// to ensure no writes are made.
+///
+/// If the optional callback function `status_cb` is non-`null`, it will be
+/// called with diagnostic and informational messages. The argument `closure` is
+/// passed verbatim to any callback invoked.
+pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?Database.StatusCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_compact_db(path, backup_path, status_cb, closure));
+}
 
 test {
     std.testing.refAllDecls(@This());

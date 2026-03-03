@@ -45,7 +45,7 @@ pub const CONFIG = generateEnum("NOTMUCH_CONFIG_", &.{ "NOTMUCH_CONFIG_FIRST", "
 
 pub const DATABASE_MODE = generateEnum("NOTMUCH_DATABASE_MODE_", &.{});
 
-pub const DECRYPT = generateEnum("NOTMUCH_DECRYPT_", &.{});
+pub const Decrypt = generateEnum("NOTMUCH_DECRYPT_", &.{});
 
 /// Exclude values for `Query.setOmitExcluded`
 pub const EXCLUDE = generateEnum("NOTMUCH_EXCLUDE_", &.{});
