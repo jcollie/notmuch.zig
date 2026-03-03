@@ -1,46 +1,163 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Zig wrapped around the `notmuch` C APIs that deal with messages.
 const Message = @This();
 
 const std = @import("std");
-const log = std.log.scoped(.notmuch);
 
 const c = @import("c");
 
+const Database = @import("Database.zig");
 const Error = @import("error.zig").Error;
-const wrap = @import("error.zig").wrap;
-
+const FilenamesIterator = @import("FilenamesIterator.zig");
+const IndexOpts = @import("IndexOpts.zig");
 const MessageFlag = @import("enums.zig").MessageFlag;
-
+const MessagesIterator = @import("MessagesIterator.zig");
+const status = @import("enums.zig").status;
 const TagsIterator = @import("TagsIterator.zig");
+const wrap = @import("error.zig").wrap;
 
 duplicate: ?bool = null,
 message: *c.notmuch_message_t,
 
-/// Get the message ID of 'message'.
+/// Get the database associated with this message.
+pub fn getDatabase(self: *const Message) Database {
+    return .{
+        .database = c.notmuch_message_get_database(self.message) orelse unreachable,
+    };
+}
+
+/// Get the message ID of `Message`.
 ///
-/// The returned string belongs to 'message' and as such, should not be
-/// modified by the caller and will only be valid for as long as the message
-/// is valid, (which is until the query from which it derived is destroyed).
+/// The returned string belongs to `Message` and as such, should not be modified
+/// or freed by the caller and will only be valid for as long as the message is
+/// valid, which is until the query from which it derived is destroyed.
 ///
-/// This function will return NULL if triggers an unhandled Xapian
-/// exception.
+/// This function will return `null` if triggers an unhandled Xapian exception.
 pub fn getMessageID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_message_id(self.message) orelse return null);
 }
 
-/// Get the thread ID of 'message'.
+/// Get the thread ID of `Message`.
 ///
-/// The returned string belongs to 'message' and as such, should not be
-/// modified by the caller and will only be valid for as long as the message
-/// is valid, (for example, until the user calls notmuch_message_destroy on
-/// 'message' or until a query from which it derived is destroyed).
+/// The returned string belongs to `Message` and as such, should not be modified
+/// or freed by the caller and will only be valid for as long as the message is
+/// valid, which is until the user calls `deinit` or until the query from which
+/// it derived is deinitialized).
 ///
-/// This function will return NULL if triggers an unhandled Xapian
-/// exception.
+/// This function will return `null` if triggers an unhandled Xapian exception.
 pub fn getThreadID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_thread_id(self.message) orelse return null);
+}
+
+/// Get a `MessagesIterator` for all of the replies to `Message`.
+///
+/// Note: This call only makes sense if `Message` was ultimately obtained from
+/// a `Thread` object, (such as by coming directly from the result of calling
+/// `Threads.getToplevelMessages` or by any number of subsequent calls to
+/// `getReplies`).
+///
+/// If `Message` was obtained through some non-thread means, (such as by a
+/// call to `Query.searchMessages`), then this function will return an empty
+/// iterator.
+///
+/// If there are no replies to `Message`, this function will return an empty
+/// iterator.
+///
+/// This function also return an empty iterator if it triggers a Xapian
+/// exception.
+///
+/// The returned list will be deinitialized when the thread is denitialized.
+pub fn getReplies(self: *const Message) MessagesIterator {
+    return .{
+        .messages = c.notmuch_message_get_replies(self.message),
+    };
+}
+
+pub const CountFilesError = error{
+    /// An error occurred while trying to count files.
+    CountFilesError,
+};
+
+/// Get the total number of files associated with a message.
+pub fn countFiles(self: *const Message) CountFilesError!usize {
+    std.debug.assert(@typeInfo(c_int).int.bits <= @typeInfo(usize).int.bits);
+    const count = c.notmuch_message_count_files(self.message);
+    if (count < 0) return error.CountFilesError;
+    return @intCast(@max(0, count));
+}
+
+pub const GetFilenameError = error{
+    XapianException,
+};
+
+/// Get a filename for the email corresponding to `Message`.
+///
+/// The returned filename is an absolute filename (the initial component will
+/// match `Database.getPath`).
+///
+/// The returned string belongs to the message so should not be modified or
+/// freed by the caller (nor should it be referenced after the message is
+/// deinitialized).
+///
+/// Note: If this message corresponds to multiple files in the mail store,
+/// (that is, multiple files contain identical message IDs), this function will
+/// arbitrarily return a single one of those filenames. See `getFilenames` for
+/// returning the complete list of filenames.
+///
+/// This function returns NULL if it triggers a Xapian exception.
+pub fn getFilename(self: *const Message) GetFilenameError![:0]const u8 {
+    return std.mem.span(c.notmuch_message_get_filename(self.message) orelse return error.XapianException);
+}
+
+pub const GetFilenamesError = error{
+    XapianException,
+};
+
+/// Get all filenames for the email corresponding to `Message`.
+///
+/// Returns a `FilenamesIterator` listing all the filenames associated with
+/// `Message`. These files may not have identical content, but each will have
+/// the identical Message-ID.
+///
+/// Each filename in the iterator is an absolute filename (the initial component
+/// will match `Database.getPath`).
+pub fn getFilenames(self: *const Message) GetFilenamesError!FilenamesIterator {
+    return .{
+        .filenames = c.notmuch_message_get_filenames(self.message) orelse return error.XapianException,
+    };
+}
+
+pub fn reindex(self: *const Message, indexopts: ?IndexOpts) Error!void {
+    return switch (status(c.notmuch_message_reindex(self.message, if (indexopts) |i| i.indexopts else null))) {
+        .success => {},
+        .duplicate_message_id => {},
+        .file_error => error.FileError,
+        .file_not_email => error.FileNotEmail,
+        .read_only_database => error.ReadOnlyDatabase,
+        .upgrade_required => error.UpgradeRequired,
+        else => unreachable,
+    };
+}
+
+pub const GetFlagError = error{
+    XapianException,
+};
+
+/// Get a value of a flag for the email corresponding to `Message`.
+pub fn getFlag(self: *const Message, flag: MessageFlag) GetFlagError!bool {
+    var is_set: c.notmuch_bool_t = undefined;
+    return switch (status(c.notmuch_message_get_flag_st(
+        self.message,
+        @intFromEnum(flag),
+        &is_set,
+    ))) {
+        .success => is_set != 0,
+        .null_pointer => unreachable,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
+    };
 }
 
 /// Add a tag to the given message.
@@ -120,13 +237,6 @@ pub fn freeze(self: *const Message) Error!void {
 /// message is actually thawed.
 pub fn thaw(self: *const Message) Error!void {
     try wrap(c.notmuch_message_thaw(self.message));
-}
-
-/// Get a value of a flag for the email corresponding to 'message'.
-pub fn getFlag(self: *const Message, flag: MessageFlag) Error!bool {
-    var is_set: c.notmuch_bool_t = undefined;
-    try wrap(c.notmuch_message_get_flag_st(self.message, @intFromEnum(flag), &is_set));
-    return is_set != 0;
 }
 
 /// Set a value of a flag for the email corresponding to 'message'.
@@ -259,3 +369,7 @@ pub const PropertyIterator = struct {
         c.notmuch_message_properties_destroy(properties);
     }
 };
+
+test {
+    _ = std.testing.refAllDecls(@This());
+}

@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! A Zig wrapper around the `notmuch` C APIs for dealing with
-//! lists of threads.
-pub const ThreadsIterator = @This();
+//! lists of filenames.
+pub const FilenamesIterator = @This();
 
 const c = @import("c");
 
-const Thread = @import("Thread.zig");
 const status = @import("enums.zig").status;
 
-threads: ?*c.notmuch_threads_t,
+filenames: ?*c.notmuch_filenames_t,
 
 pub const NextError = error{
     /// Iteration failed to allocate memory.
@@ -20,7 +19,7 @@ pub const NextError = error{
     OperationInvalidated,
 };
 
-pub fn next(self: *ThreadsIterator) NextError!?Thread {
+pub fn next(self: *FilenamesIterator) NextError!?[:0]const u8 {
     const threads = self.threads orelse return null;
     return switch (status(c.notmuch_threads_status(threads))) {
         .success => thread: {
@@ -42,7 +41,7 @@ pub fn next(self: *ThreadsIterator) NextError!?Thread {
 /// It's not strictly necessary to call this function. All memory from
 /// the `ThreadIterator` object will be reclaimed when the
 /// containing query object is deinitialized.
-pub fn deinit(self: *ThreadsIterator) void {
+pub fn deinit(self: *FilenamesIterator) void {
     const threads = self.threads orelse return;
     c.notmuch_threads_destroy(threads);
 }

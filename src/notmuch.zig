@@ -10,9 +10,13 @@ const c = @import("c");
 pub const Database = @import("Database.zig");
 pub const Error = @import("error.zig").Error;
 pub const Message = @import("Message.zig");
+pub const MessagesIterator = @import("MessagesIterator.zig");
 pub const Query = @import("Query.zig");
 pub const Thread = @import("Thread.zig");
 pub const ThreadsIterator = @import("ThreadsIterator.zig");
+
+/// The maximum length of a tag.
+pub const tag_max = c.NOTMUCH_TAG_MAX;
 
 const wrap = @import("error.zig").wrap;
 

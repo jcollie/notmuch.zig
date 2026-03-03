@@ -10,22 +10,22 @@ const log = std.log.scoped(.notmuch);
 
 const c = @import("c");
 
-const Error = @import("error.zig").Error;
-const wrap = @import("error.zig").wrap;
-const wrapMessage = @import("error.zig").wrapMessage;
-
-const enums = @import("enums.zig");
 pub const Config = enums.Config;
 pub const Mode = enums.DatabaseMode;
-const Decrypt = enums.DECRYPT;
-const QuerySyntax = enums.QuerySyntax;
-const STATUS = enums.Status;
-const status = enums.status;
 
+const Decrypt = enums.Decrypt;
 const Directory = @import("Directory.zig");
+const enums = @import("enums.zig");
+const Error = @import("error.zig").Error;
+const IndexOpts = @import("IndexOpts.zig");
 const Message = @import("Message.zig");
 const Query = @import("Query.zig");
+const QuerySyntax = enums.QuerySyntax;
+const status = enums.status;
+const Status = enums.Status;
 const TagsIterator = @import("TagsIterator.zig");
+const wrap = @import("error.zig").wrap;
+const wrapMessage = @import("error.zig").wrapMessage;
 
 /// A callback invoked by `compact` to notify the user of the progress of the
 /// compaction process.
@@ -282,7 +282,7 @@ test create {
 
     const r = create(.{ .config_path = config_path });
     defer switch (r) {
-        .ok => |db| db.destroy() catch {},
+        .ok => |db| db.deinit() catch {},
         .err => |e| e.deinit(),
     };
     try std.testing.expect(r == .ok);
@@ -322,12 +322,16 @@ pub fn compact(self: *const Database, backup_path: [:0]const u8, status_cb: ?Sta
     try wrap(c.notmuch_database_compact_db(self.database, backup_path, status_cb, closure));
 }
 
-/// Destroy the notmuch database, closing it if necessary and freeing all
+/// Deinit the notmuch database, closing it if necessary and freeing all
 /// associated resources.
 ///
-/// Return value as in `close` if the database was open; `destroy` itself has no
+/// Return value as in `close` if the database was open; `deinit` itself has no
 /// failure modes.
-pub fn destroy(self: *const Database) Error!void {
+///
+/// NOTE: In the `notmuch` C API, this is referred to as a `destroy` operation.
+/// This has been renamed to `deinit` to align with Zig's nomenclature and to
+/// avoid the inference that this API call would delete data from disk.
+pub fn deinit(self: *const Database) Error!void {
     switch (status(c.notmuch_database_destroy(self.database))) {
         .success => {},
         .xapian_exception => return error.XapianException,
@@ -819,22 +823,6 @@ pub fn configGetValuesString(
         .values = c.notmuch_config_get_values_string(self.database, @intFromEnum(key)),
     };
 }
-
-pub const IndexOpts = struct {
-    indexopts: *c.notmuch_indexopts_t,
-
-    pub fn getDecryptPolicy(self: IndexOpts) Decrypt {
-        return @enumFromInt(c.notmuch_indexopts_get_decrypt_policy(self.indexopts));
-    }
-
-    pub fn setDecryptPolicy(self: IndexOpts, decrypt_policy: Decrypt) Error!void {
-        try wrap(c.notmuch_indexopts_set_decrypt_policy(self.indexopts, @intFromEnum(decrypt_policy)));
-    }
-
-    pub fn deinit(self: IndexOpts) void {
-        c.notmuch_indexopts_destroy(self.indexopts);
-    }
-};
 
 pub const ValuesIterator = struct {
     values: ?*c.notmuch_config_values_t,
