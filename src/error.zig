@@ -7,7 +7,7 @@ const log = std.log.scoped(.notmuch);
 
 const c = @import("c");
 
-const STATUS = @import("enums.zig").STATUS;
+const Status = @import("enums.zig").Status;
 const status = @import("enums.zig").status;
 
 pub const Error = error{

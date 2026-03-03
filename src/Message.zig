@@ -11,7 +11,7 @@ const c = @import("c");
 const Error = @import("error.zig").Error;
 const wrap = @import("error.zig").wrap;
 
-const MESSAGE_FLAG = @import("enums.zig").MESSAGE_FLAG;
+const MessageFlag = @import("enums.zig").MessageFlag;
 
 const TagsIterator = @import("TagsIterator.zig");
 
@@ -123,14 +123,14 @@ pub fn thaw(self: *const Message) Error!void {
 }
 
 /// Get a value of a flag for the email corresponding to 'message'.
-pub fn getFlag(self: *const Message, flag: MESSAGE_FLAG) Error!bool {
+pub fn getFlag(self: *const Message, flag: MessageFlag) Error!bool {
     var is_set: c.notmuch_bool_t = undefined;
     try wrap(c.notmuch_message_get_flag_st(self.message, @intFromEnum(flag), &is_set));
     return is_set != 0;
 }
 
 /// Set a value of a flag for the email corresponding to 'message'.
-pub fn setFlag(self: *const Message, flag: MESSAGE_FLAG, value: bool) void {
+pub fn setFlag(self: *const Message, flag: MessageFlag, value: bool) void {
     c.notmuch_message_set_flag(self.message, @intFromEnum(flag), @intFromBool(value));
 }
 

@@ -15,16 +15,17 @@ const wrap = @import("error.zig").wrap;
 const wrapMessage = @import("error.zig").wrapMessage;
 
 const enums = @import("enums.zig");
-pub const Config = enums.CONFIG;
-pub const Mode = enums.DATABASE_MODE;
+pub const Config = enums.Config;
+pub const Mode = enums.DatabaseMode;
 const Decrypt = enums.DECRYPT;
-const QUERY_SYNTAX = enums.QUERY_SYNTAX;
-const STATUS = enums.STATUS;
+const QuerySyntax = enums.QuerySyntax;
+const STATUS = enums.Status;
 const status = enums.status;
 
 const Directory = @import("Directory.zig");
 const Message = @import("Message.zig");
 const Query = @import("Query.zig");
+const TagsIterator = @import("TagsIterator.zig");
 
 /// A callback invoked by `compact` to notify the user of the progress of the
 /// compaction process.
@@ -334,10 +335,10 @@ pub fn destroy(self: *const Database) Error!void {
     }
 }
 
-/// Return the database path of the given database.
+/// Return the database path of the database.
 ///
-/// The return value is a string owned by notmuch so should not be modified nor
-/// freed by the caller.
+/// The return value is a string owned by `notmuch` so should not be modified
+/// nor freed by the caller.
 pub fn getPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_database_get_path(self.database) orelse return null);
 }
@@ -400,8 +401,8 @@ pub fn beginAtomic(self: *const Database) error{XapianException}!void {
 }
 
 /// Indicate the end of an atomic database operation. If repeated (with matching
-/// notmuch_database_begin_atomic) "database.autocommit" times, commit the the
-/// transaction and all previous (non-cancelled) transactions to the database.
+/// `beginAtomic`) "database.autocommit" times, commit the the transaction and
+/// all previous (non-cancelled) transactions to the database.
 pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException }!void {
     switch (status(c.notmuch_database_begin_atomic(self.database))) {
         .success => {},
@@ -453,6 +454,7 @@ pub fn getRevision(self: *const Database) Revision {
         .uuid = std.mem.span(uuid),
     };
 }
+
 /// Retrieve a directory object from the database for `path`.
 ///
 /// Here, 'path' should be a path relative to the path of `database` (see
@@ -467,16 +469,14 @@ pub fn getRevision(self: *const Database) Revision {
 pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!?Directory {
     var directory: ?*c.notmuch_directory_t = null;
 
-    switch (status(c.notmuch_database_get_directory(self.database, path, &directory))) {
-        .success => {},
-        .null_pointer => return error.NullPointer,
-        .upgrade_required => return error.UpgradeRequired,
-        .xapian_exception => return error.XapianException,
+    return switch (status(c.notmuch_database_get_directory(self.database, path, &directory))) {
+        .success => .{
+            .directory = directory orelse return null,
+        },
+        .null_pointer => error.NullPointer,
+        .upgrade_required => error.UpgradeRequired,
+        .xapian_exception => error.XapianException,
         else => unreachable,
-    }
-
-    return .{
-        .directory = directory orelse return null,
     };
 }
 
@@ -672,6 +672,79 @@ pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) Find
     };
 }
 
+/// Return a list of all tags found in the database.
+///
+/// This function creates a list of all tags found in the database. The
+/// resulting list contains all tags from all messages found in the database.
+///
+/// On error this function returns `null`.
+pub fn getAllTags(self: *const Database) ?TagsIterator {
+    return .{
+        .tags = c.notmuch_database_get_all_tags(self.database) orelse return null,
+    };
+}
+
+pub const ReopenError = error{
+    /// The database was not open.
+    IllegalArgument,
+    /// A Xapian exception occurred.
+    XapianException,
+};
+
+/// Reopen an open notmuch database.
+pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
+    return switch (status(c.notmuch_database_reopen(self.database, @intFromEnum(mode)))) {
+        .success => {},
+        .illegal_argument => error.IllegalArgument,
+        .xapian_exception => error.XapianException,
+        else => unreachable,
+    };
+}
+
+/// Create a new query.
+///
+/// For the query string, we'll document the syntax here more completely in the
+/// future, but it's likely to be a specialized version of the general Xapian
+/// query syntax:
+///
+/// https://xapian.org/docs/queryparser.html
+///
+/// As a special case, passing either a length-zero string, (that is ""), or a
+/// string consisting of a single asterisk (that is "*"), will result in a query
+/// that returns all messages in the database.
+///
+/// See `Query.setSort` for controlling the order of results. See
+/// `Query.searchMessages` and `Query.searchThreads` to actually execute the
+/// query.
+pub fn queryCreate(self: *const Database, query_string: [:0]const u8) error{OutOfMemory}!Query {
+    return .init(c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory);
+}
+
+/// Create a new query.
+///
+/// For the query string, we'll document the syntax here more completely in the
+/// future, but it's likely to be a specialized version of the general Xapian
+/// query syntax:
+///
+/// https://xapian.org/docs/queryparser.html
+///
+/// As a special case, passing either a length-zero string, (that is `""`), or
+/// a string consisting of a single asterisk (that is `"*"`), will result in a
+/// query that returns all messages in the database.
+///
+/// See `Query.setSort` for controlling the order of results. See
+/// `Query.searchMessages` and `Query.searchThreads` to actually execute the
+/// query.
+///
+/// User should call `Query.deinit` when finished with this query.
+pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, syntax: QuerySyntax) Error!Query {
+    var query: ?*c.notmuch_query_t = undefined;
+
+    try wrap(c.notmuch_query_create_with_syntax(self.database, query_string, @intFromEnum(syntax), &query));
+
+    return .init(query orelse return error.OutOfMemory);
+}
+
 pub fn getDefaultIndexOpts(self: *const Database) ?IndexOpts {
     return .{
         .indexopts = c.notmuch_database_get_default_indexopts(self.database) orelse return null,
@@ -745,33 +818,6 @@ pub fn configGetValuesString(
     return .{
         .values = c.notmuch_config_get_values_string(self.database, @intFromEnum(key)),
     };
-}
-
-/// Create a new query.
-///
-/// For the query string, we'll document the syntax here more completely in the
-/// future, but it's likely to be a specialized version of the general Xapian
-/// query syntax:
-///
-/// https://xapian.org/docs/queryparser.html
-///
-/// As a special case, passing either a length-zero string, (that is ""), or a
-/// string consisting of a single asterisk (that is "*"), will result in a query
-/// that returns all messages in the database.
-///
-/// See `Query.setSort` for controlling the order of results. See
-/// `Query.searchMessages` and `Query.searchThreads` to actually execute the
-/// query.
-pub fn queryCreate(self: *const Database, query_string: [:0]const u8) Error!Query {
-    return .init(c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory);
-}
-
-pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, syntax: QUERY_SYNTAX) Error!Query {
-    var query: ?*c.notmuch_query_t = undefined;
-
-    try wrap(c.notmuch_query_create_with_syntax(self.database, query_string, @intFromEnum(syntax), &query));
-
-    return .init(query orelse return error.OutOfMemory);
 }
 
 pub const IndexOpts = struct {

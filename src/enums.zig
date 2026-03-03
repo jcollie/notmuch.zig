@@ -41,27 +41,27 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
 }
 
 /// Configuration keys known to notmuch.
-pub const CONFIG = generateEnum("NOTMUCH_CONFIG_", &.{ "NOTMUCH_CONFIG_FIRST", "NOTMUCH_CONFIG_LAST" });
+pub const Config = generateEnum("NOTMUCH_CONFIG_", &.{ "NOTMUCH_CONFIG_FIRST", "NOTMUCH_CONFIG_LAST" });
 
-pub const DATABASE_MODE = generateEnum("NOTMUCH_DATABASE_MODE_", &.{});
+pub const DatabaseMode = generateEnum("NOTMUCH_DATABASE_MODE_", &.{});
 
 pub const Decrypt = generateEnum("NOTMUCH_DECRYPT_", &.{});
 
 /// Exclude values for `Query.setOmitExcluded`
-pub const EXCLUDE = generateEnum("NOTMUCH_EXCLUDE_", &.{});
+pub const Exclude = generateEnum("NOTMUCH_EXCLUDE_", &.{});
 
-pub const MESSAGE_FLAG = generateEnum("NOTMUCH_MESSAGE_FLAG_", &.{});
+pub const MessageFlag = generateEnum("NOTMUCH_MESSAGE_FLAG_", &.{});
 
 /// query syntax
-pub const QUERY_SYNTAX = generateEnum("NOTMUCH_QUERY_SYNTAX_", &.{});
+pub const QuerySyntax = generateEnum("NOTMUCH_QUERY_SYNTAX_", &.{});
 
 /// Sort values for notmuch_query_set_sort.
-pub const SORT = generateEnum("NOTMUCH_SORT_", &.{});
+pub const Sort = generateEnum("NOTMUCH_SORT_", &.{});
 
 /// Status codes used for the return values of most functions.
-pub const STATUS = generateEnum("NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});
+pub const Status = generateEnum("NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});
 
-/// Convenience function to convert a notmuch API return code to a STATUS enum.
-pub fn status(rc: c_uint) STATUS {
+/// Convenience function to convert a notmuch API return code to a Status enum.
+pub fn status(rc: c_uint) Status {
     return @enumFromInt(rc);
 }

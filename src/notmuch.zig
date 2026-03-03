@@ -7,10 +7,12 @@ const std = @import("std");
 
 const c = @import("c");
 
-pub const Error = @import("error.zig").Error;
 pub const Database = @import("Database.zig");
+pub const Error = @import("error.zig").Error;
 pub const Message = @import("Message.zig");
 pub const Query = @import("Query.zig");
+pub const Thread = @import("Thread.zig");
+pub const ThreadsIterator = @import("ThreadsIterator.zig");
 
 const wrap = @import("error.zig").wrap;
 
