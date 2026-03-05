@@ -369,7 +369,9 @@ pub fn needsUpgrade(self: *const Database) bool {
     return c.notmuch_database_needs_upgrade(self.database) != 0;
 }
 
-pub const UpgradeProgressNotifyCallback = fn (closure: ?*anyopaque, progress: f64) callconv(.c) void;
+/// Callback function that provides progress notification during a database
+/// upgrade operation.
+pub const ProgressCallback = fn (closure: ?*anyopaque, progress: f64) callconv(.c) void;
 
 /// Upgrade the current database to the latest supported version.
 ///
@@ -379,13 +381,13 @@ pub const UpgradeProgressNotifyCallback = fn (closure: ?*anyopaque, progress: f6
 /// and if so, upgrade with this function before making any modifications. If
 /// `needsUpgrade` returns `false`, this will be a no-op.
 ///
-/// The optional `progress_notify` callback can be used by the caller to
+/// The optional `progress_cb` callback can be used by the caller to
 /// provide progress indication to the user. If non-`null` it will be called
 /// periodically with `progress` as a floating-point value in the range of [0.0
 /// .. 1.0] indicating the progress made so far in the upgrade process. The
 /// argument `closure` is passed verbatim to any callback invoked.
-pub fn upgrade(self: *const Database, progress_notify: ?UpgradeProgressNotifyCallback, closure: ?*anyopaque) Error!void {
-    try wrap(c.notmuch_database_upgrade(self.database, progress_notify, closure));
+pub fn upgrade(self: *const Database, progress_cb: ?ProgressCallback, closure: ?*anyopaque) Error!void {
+    try wrap(c.notmuch_database_upgrade(self.database, progress_cb, closure));
 }
 
 /// Begin an atomic database operation.

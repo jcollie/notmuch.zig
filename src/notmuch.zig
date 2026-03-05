@@ -21,7 +21,7 @@ pub const tag_max: usize = @intCast(c.NOTMUCH_TAG_MAX);
 
 const wrap = @import("error.zig").wrap;
 
-/// Compact a notmuch database, backing up the original database to the given
+/// Compact a `notmuch` database, backing up the original database to the given
 /// path.
 ///
 /// The database will be opened in read-write mode during the compaction process

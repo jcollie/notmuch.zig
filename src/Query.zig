@@ -7,16 +7,15 @@ const std = @import("std");
 
 const c = @import("c");
 
-const status = @import("enums.zig").status;
-const Error = @import("error.zig").Error;
-const wrap = @import("error.zig").wrap;
-
-const Exclude = @import("enums.zig").Exclude;
-const Sort = @import("enums.zig").Sort;
+pub const Exclude = @import("enums.zig").Exclude;
+pub const Sort = @import("enums.zig").Sort;
 
 const Database = @import("Database.zig");
+const Error = @import("error.zig").Error;
 const MessagesIterator = @import("MessagesIterator.zig");
+const status = @import("enums.zig").status;
 const ThreadsIterator = @import("ThreadsIterator.zig");
+const wrap = @import("error.zig").wrap;
 
 query: *c.notmuch_query_t,
 
@@ -82,13 +81,6 @@ pub const AddTagExcludeError = error{
 
 /// Add a tag that will be excluded from the query results by default. This
 /// exclusion will be ignored if this tag appears explicitly in the query.
-///
-/// Errors returned:
-///
-/// XapianException: a Xapian exception occurred. Most likely a problem lazily
-///   parsing the query string.
-///
-/// Ignored: tag is explicitly present in the query, so not excluded.
 pub fn addTagExclude(self: *const Query, tag: [:0]const u8) AddTagExcludeError!void {
     return switch (status(c.notmuch_query_add_tag_exclude(self.query, tag))) {
         .success => {},
