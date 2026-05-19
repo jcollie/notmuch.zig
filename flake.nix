@@ -6,23 +6,20 @@
     nixpkgs = {
       url = "https://channels.nixos.org/nixos-unstable/nixexprs.tar.xz";
     };
-    zig = {
-      url = "git+https://git.ocjtech.us/jeff/zig-overlay.git";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-      };
-    };
   };
 
   outputs =
     {
       nixpkgs,
-      zig,
       ...
     }:
     let
       lib = nixpkgs.lib;
-      platforms = lib.attrNames zig.packages;
+      platforms = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
       makePackages =
         system:
         import nixpkgs {
@@ -35,11 +32,11 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           nativeBuildInputs = [
-            zig.packages.${pkgs.stdenv.hostPlatform.system}.master
             pkgs.git-pages-cli
             pkgs.pinact
             pkgs.pkg-config
             pkgs.reuse
+            pkgs.zig_0_16
           ];
           buildInputs = [
             pkgs.notmuch

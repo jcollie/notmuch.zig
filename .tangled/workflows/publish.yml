@@ -12,9 +12,6 @@ dependencies:
   nixpkgs:
     - curl
 
-  github:NixOS/nixpkgs/nixpkgs-unstable:
-    - zig_0_16
-
 environment:
   SITE_PATH: zig-out/docs
   SITE_NAME: notmuch.zig
