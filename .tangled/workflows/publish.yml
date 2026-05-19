@@ -1,0 +1,37 @@
+when:
+  - event:
+      - push
+    branch:
+      - main
+  - event:
+      - manual
+
+engine: nixery
+
+dependencies:
+  nixpkgs:
+    - curl
+
+  github:NixOS/nixpkgs/nixpkgs-unstable:
+    - zig_0_16
+
+environment:
+  SITE_PATH: zig-out/docs
+  SITE_NAME: notmuch.zig
+
+steps:
+  - name: Build site
+    command: zig build docs
+
+  - name: Install Wisp CLI
+    command: |
+      curl -o /tmp/wisp-cli https://sites.wisp.place/nekomimi.pet/wisp-cli-binaries/wisp-cli-x86_64-linux
+      chmod a+x /tmp/wisp-cli
+
+  - name: deploy to wisp
+    command: |
+      /tmp/wisp-cli \
+        "$WISP_HANDLE" \
+        --path "$SITE_PATH" \
+        --name "$SITE_NAME" \
+        --password "$WISP_APP_PASSWORD"
