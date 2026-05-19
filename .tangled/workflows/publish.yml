@@ -22,13 +22,10 @@ steps:
   - name: Build site
     command: nix develop -c zig build docs
 
-  - name: Install Wisp CLI
-    command: |
-      curl -o ./wisp-cli https://sites.wisp.place/nekomimi.pet/wisp-cli-binaries/wisp-cli-x86_64-linux
-      chmod a+x ./wisp-cli
-
   - name: deploy to wisp
     command: |
+      curl -s -o ./wisp-cli https://sites.wisp.place/nekomimi.pet/wisp-cli-binaries/wisp-cli-x86_64-linux
+      chmod a+x ./wisp-cli
       ./wisp-cli \
         "$WISP_HANDLE" \
         --path "$SITE_PATH" \
