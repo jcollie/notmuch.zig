@@ -21,7 +21,7 @@ environment:
 
 steps:
   - name: Build site
-    command: zig build docs
+    command: nix develop -c zig build docs
 
   - name: Install Wisp CLI
     command: |
