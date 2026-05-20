@@ -10,13 +10,14 @@ engine: nixery
 
 dependencies:
   nixpkgs:
+    - glibc
     - curl
 
 environment:
-  SITE_PATH: zig-out/docs
-  SITE_NAME: notmuch.zig
   TERM: dumb
   NO_COLOR: "true"
+  SITE_PATH: zig-out/docs
+  SITE_NAME: notmuch.zig
 
 steps:
   - name: Build site
