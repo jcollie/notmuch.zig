@@ -25,9 +25,11 @@ steps:
 
   - name: deploy to wisp
     command: |
-      curl -s -o ./wisp-cli https://sites.wisp.place/nekomimi.pet/wisp-cli-binaries/wisp-cli-x86_64-linux
-      chmod a+x ./wisp-cli
-      ./wisp-cli \
+      curl -s -o ./wispcli https://sites.wisp.place/nekomimi.pet/wisp-cli-binaries/wisp-cli-x86_64-linux
+      chmod a+x ./wispcli
+      ls -l ./wispcli
+      ldd ./wispcli
+      ./wispcli \
         "$WISP_HANDLE" \
         --path "$SITE_PATH" \
         --name "$SITE_NAME" \
