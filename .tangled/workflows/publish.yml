@@ -10,7 +10,6 @@ engine: nixery
 
 dependencies:
   nixpkgs:
-    - glibc
     - curl
 
 environment:
