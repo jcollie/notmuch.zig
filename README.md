@@ -49,6 +49,37 @@ exe.root_module.addImport("notmuch", notmuch.module("notmuch"));
 
 The module links `libnotmuch` and libc itself, so there is nothing else to add.
 
+## Cloning with Radicle
+
+The repository is also published on the [Radicle](https://radicle.xyz/)
+peer-to-peer network under the repository ID
+
+```
+rad:zQWqvMomwbxzKg6pd4ktY65B8oyY
+```
+
+With a local Radicle node running, clone it with:
+
+```console
+$ rad clone rad:zQWqvMomwbxzKg6pd4ktY65B8oyY
+```
+
+That fetches the repository, checks out the default branch, and starts seeding
+it so other peers can fetch from you. To follow the repository without checking
+out a working copy, use `rad seed` instead:
+
+```console
+$ rad seed rad:zQWqvMomwbxzKg6pd4ktY65B8oyY
+```
+
+If you already have a clone from one of the other remotes, you can attach it to
+the same Radicle repository instead of cloning again:
+
+```console
+$ git remote add rad rad://zQWqvMomwbxzKg6pd4ktY65B8oyY
+$ git fetch rad
+```
+
 ## Usage
 
 Opening a database returns a tagged union rather than an error union, because
