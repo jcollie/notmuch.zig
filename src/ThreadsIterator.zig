@@ -24,7 +24,7 @@ pub fn next(self: *ThreadsIterator) NextError!?Thread {
     const threads = self.threads orelse return null;
     return switch (status(c.notmuch_threads_status(threads))) {
         .success => thread: {
-            if (c.notmuch_threads_valid(threads) != 0) break :thread null;
+            if (c.notmuch_threads_valid(threads) == 0) break :thread null;
             defer c.notmuch_threads_move_to_next(threads);
             break :thread .{
                 .thread = c.notmuch_threads_get(threads) orelse unreachable,

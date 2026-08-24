@@ -40,9 +40,9 @@ pub fn collectTags(self: *const MessagesIterator) ?TagsIterator {
 
 pub fn next(self: *const MessagesIterator) NextError!?Message {
     const messages = self.messages orelse return null;
-    return switch (status(c.notmuch_threads_status(messages))) {
+    return switch (status(c.notmuch_messages_status(messages))) {
         .success => message: {
-            if (c.notmuch_messages_valid(messages) != 0) break :message null;
+            if (c.notmuch_messages_valid(messages) == 0) break :message null;
             defer c.notmuch_messages_move_to_next(messages);
             break :message .{
                 .message = c.notmuch_messages_get(messages) orelse unreachable,

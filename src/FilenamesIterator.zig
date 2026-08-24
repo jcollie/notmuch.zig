@@ -16,11 +16,9 @@ filenames: ?*c.notmuch_filenames_t,
 /// identical to it (and the object to which it ultimately belongs).
 pub fn next(self: *FilenamesIterator) ?[:0]const u8 {
     const filenames = self.filenames orelse return null;
-    if (c.notmuch_threads_valid(filenames) != 0) return null;
-    defer c.notmuch_threads_move_to_next(filenames);
-    return .{
-        .thread = std.mem.span(c.notmuch_threads_get(filenames) orelse unreachable),
-    };
+    if (c.notmuch_filenames_valid(filenames) == 0) return null;
+    defer c.notmuch_filenames_move_to_next(filenames);
+    return std.mem.span(c.notmuch_filenames_get(filenames) orelse unreachable);
 }
 
 /// Deinitialize a `FilenamesIterator` object.
