@@ -37,11 +37,36 @@ pub fn getQueryString(self: *const Query) [:0]const u8 {
     return std.mem.span(c.notmuch_query_get_query_string(self.query));
 }
 
+test getQueryString {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("tag:inbox");
+    defer query.deinit();
+    try std.testing.expectEqualStrings("tag:inbox", query.getQueryString());
+}
+
 /// Return the notmuch database of this query. See `Database.queryCreate`.
 pub fn getDatabase(self: *const Query) ?Database {
     return .{
         .database = c.notmuch_query_get_database(self.query) orelse return null,
     };
+}
+
+test getDatabase {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("tag:inbox");
+    defer query.deinit();
+
+    // The query's owning database is the one it was created from.
+    const db = query.getDatabase() orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(test_db.database.database, db.database);
 }
 
 /// Specify whether to omit excluded results or simply flag them. By default,
@@ -70,14 +95,83 @@ pub fn setOmitExcluded(self: *const Query, omit_excluded: Exclude) void {
     c.notmuch_query_set_omit_excluded(self.query, @intFromEnum(omit_excluded));
 }
 
+test setOmitExcluded {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const spam = try db.findMessage("three@example.org") orelse return error.TestUnexpectedResult;
+    defer spam.deinit();
+    try spam.addTag("spam");
+
+    const query = try db.queryCreate("*");
+    defer query.deinit();
+    try query.addTagExclude("spam");
+
+    // With .false, the exclusion is disabled entirely.
+    query.setOmitExcluded(.false);
+    {
+        var messages = try query.searchMessages();
+        defer messages.deinit();
+        var count: usize = 0;
+        while (try messages.next()) |message| : (count += 1) message.deinit();
+        try std.testing.expectEqual(fixture.corpus.len, count);
+    }
+
+    // With .flag, excluded messages are returned but marked with the
+    // excluded message flag.
+    query.setOmitExcluded(.flag);
+    {
+        var messages = try query.searchMessages();
+        defer messages.deinit();
+        var excluded_count: usize = 0;
+        while (try messages.next()) |message| {
+            defer message.deinit();
+            if (try message.getFlag(.excluded)) excluded_count += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), excluded_count);
+    }
+}
+
 /// Specify the sorting desired for this query.
 pub fn setSort(self: *const Query, sort: Sort) void {
     c.notmuch_query_set_sort(self.query, @intFromEnum(sort));
 }
 
+test setSort {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+
+    // Every sort order round-trips through getSort. See `searchMessages`
+    // for the effect on search results.
+    for ([_]Sort{ .oldest_first, .newest_first, .message_id, .unsorted }) |sort| {
+        query.setSort(sort);
+        try std.testing.expectEqual(sort, query.getSort());
+    }
+}
+
 /// Return the sort specified for this query.
 pub fn getSort(self: *const Query) Sort {
     return @enumFromInt(c.notmuch_query_get_sort(self.query));
+}
+
+test getSort {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    // The default sort order is newest first.
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    try std.testing.expectEqual(Sort.newest_first, query.getSort());
 }
 
 pub const AddTagExcludeError = error{
@@ -158,6 +252,28 @@ pub fn searchThreads(self: *const Query) Error!ThreadsIterator {
     return .{
         .threads = threads,
     };
+}
+
+test searchThreads {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    query.setSort(.oldest_first);
+
+    // The corpus holds a two-message thread plus two standalone messages.
+    var threads = try query.searchThreads();
+    defer threads.deinit();
+    const first = try threads.next() orelse return error.TestUnexpectedResult;
+    defer first.deinit();
+    try std.testing.expectEqualStrings("Lunch plans", first.getSubject());
+
+    var remaining: usize = 0;
+    while (try threads.next()) |thread| : (remaining += 1) thread.deinit();
+    try std.testing.expectEqual(@as(usize, 2), remaining);
 }
 
 /// Execute a query for messages, returning a MessagesIterator object which can
@@ -283,6 +399,19 @@ pub fn countThreads(self: *const Query) CountThreadsError!u32 {
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test countThreads {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    // Four messages, but the lunch pair shares a thread.
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, 4), try query.countMessages());
+    try std.testing.expectEqual(@as(u32, 3), try query.countThreads());
 }
 
 /// Deinitialize the `Query` along with any associated resources.

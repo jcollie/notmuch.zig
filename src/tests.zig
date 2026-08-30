@@ -101,19 +101,6 @@ test "Database.reopen revives a closed database" {
     try std.testing.expectEqualStrings("one@example.org", message.getMessageID() orelse "");
 }
 
-test "Query string, sort, and database accessors" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-
-    const query = try test_db.database.queryCreate("tag:inbox");
-    defer query.deinit();
-
-    try std.testing.expectEqualStrings("tag:inbox", query.getQueryString());
-    query.setSort(.oldest_first);
-    try std.testing.expectEqual(notmuch.Query.Sort.oldest_first, query.getSort());
-    try std.testing.expect(query.getDatabase() != null);
-}
-
 test "Query tag exclusion error paths" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
