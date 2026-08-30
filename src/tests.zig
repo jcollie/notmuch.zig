@@ -384,6 +384,49 @@ test "Database.configGetValues" {
     try std.testing.expect(db.configGetValuesString("bogus.key") == null);
 }
 
+test "Database.configGetPairs" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.user_name, "Test User");
+
+    // A prefix restricts iteration to matching keys.
+    var user_pairs = db.configGetPairs("user.") orelse return error.TestUnexpectedResult;
+    defer user_pairs.deinit();
+    var user_count: usize = 0;
+    var saw_name = false;
+    while (user_pairs.next()) |pair| {
+        try std.testing.expect(std.mem.startsWith(u8, pair.key, "user."));
+        if (std.mem.eql(u8, pair.key, "user.name")) {
+            saw_name = true;
+            try std.testing.expectEqualStrings("Test User", pair.value orelse "");
+        }
+        user_count += 1;
+    }
+    try std.testing.expect(saw_name);
+
+    // The empty prefix iterates over all pairs, a superset of any prefix.
+    var all_pairs = db.configGetPairs("") orelse return error.TestUnexpectedResult;
+    defer all_pairs.deinit();
+    var all_count: usize = 0;
+    var saw_null_value = false;
+    while (all_pairs.next()) |pair| {
+        if (pair.value == null) saw_null_value = true;
+        all_count += 1;
+    }
+    try std.testing.expect(all_count > user_count);
+
+    // Some keys carry no value; next() reports them as null rather than
+    // crashing (regression check for the PairsIterator NULL-value fix).
+    try std.testing.expect(saw_null_value);
+
+    // An unknown prefix yields an empty iteration.
+    var unknown = db.configGetPairs("bogus.") orelse return error.TestUnexpectedResult;
+    defer unknown.deinit();
+    try std.testing.expect(unknown.next() == null);
+}
+
 test "Database.getAllTags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
