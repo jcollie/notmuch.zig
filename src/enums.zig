@@ -121,6 +121,9 @@ pub const Decrypt = enum(u2) {
 };
 
 /// Exclude values for `Query.setOmitExcluded`
+///
+/// The strange order is to maintain backward compatibility: the old
+/// FALSE/TRUE options correspond to the new `.flag`/`.true` options.
 pub const Exclude = generateEnum("NOTMUCH_EXCLUDE_", &.{});
 
 pub const MessageFlag = enum(u2) {
@@ -136,16 +139,21 @@ pub const MessageFlag = enum(u2) {
     }
 };
 
+/// Maildir info-part flags, as used by `Message.hasMaildirFlag`.
+///
+/// When flags are synchronized to tags with `Message.maildirFlagsToTags`,
+/// each flag that is present triggers the listed tag operation, and each flag
+/// that is absent triggers the opposite operation.
 pub const MaildirFlag = enum(u8) {
-    /// Adds the "draft" tag to the message.
+    /// When present, adds the "draft" tag to the message.
     D = 'D',
-    /// Adds the "flagged" tag to the message.
+    /// When present, adds the "flagged" tag to the message.
     F = 'F',
-    /// Adds the "passed" tag to the message.
+    /// When present, adds the "passed" tag to the message.
     P = 'P',
-    /// Adds the "replied" tag to the message.
+    /// When present, adds the "replied" tag to the message.
     R = 'R',
-    /// Removes the "unread" tag from the message.
+    /// When present, removes the "unread" tag from the message.
     S = 'S',
 };
 

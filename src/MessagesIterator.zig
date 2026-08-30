@@ -57,10 +57,10 @@ pub fn next(self: *const MessagesIterator) NextError!?Message {
     };
 }
 
-/// Deinitialize a `MessageIterator` object.
+/// Deinitialize a `MessagesIterator` object.
 ///
 /// It's not strictly necessary to call this function. All memory from
-/// the `MessageIterator` object will be reclaimed when the
+/// the `MessagesIterator` object will be reclaimed when the
 /// containing query object is deinitialized.
 pub fn deinit(self: *const MessagesIterator) void {
     const messages = self.messages orelse return;

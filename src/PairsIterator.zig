@@ -16,6 +16,9 @@ pub const Pair = struct {
 };
 
 /// Get the next pair, or `null` if there are no more pairs.
+///
+/// The returned strings have the same lifetime as the iterator: they are
+/// invalidated by the next call to `next` or by `deinit`.
 pub fn next(self: *PairsIterator) ?Pair {
     if (c.notmuch_config_pairs_valid(self.pairs) == 0) return null;
     defer c.notmuch_config_pairs_move_to_next(self.pairs);

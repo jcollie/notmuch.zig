@@ -39,10 +39,10 @@ pub fn next(self: *ThreadsIterator) NextError!?Thread {
     };
 }
 
-/// Deinitialize a `ThreadIterator` object.
+/// Deinitialize a `ThreadsIterator` object.
 ///
 /// It's not strictly necessary to call this function. All memory from
-/// the `ThreadIterator` object will be reclaimed when the
+/// the `ThreadsIterator` object will be reclaimed when the
 /// containing query object is deinitialized.
 pub fn deinit(self: *ThreadsIterator) void {
     const threads = self.threads orelse return;

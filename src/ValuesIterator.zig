@@ -10,6 +10,9 @@ const c = @import("c");
 values: *c.notmuch_config_values_t,
 
 /// Get the next value, or `null` if there are no more values.
+///
+/// The returned string has the same lifetime as the iterator: it is
+/// invalidated by the next call to `next` or by `deinit`.
 pub fn next(self: *ValuesIterator) ?[:0]const u8 {
     if (c.notmuch_config_values_valid(self.values) == 0) return null;
     defer c.notmuch_config_values_move_to_next(self.values);

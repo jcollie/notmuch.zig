@@ -39,7 +39,7 @@ pub const Error = error{
     /// A MIME object claimed to have cryptographic protection which notmuch
     /// tried to handle, but the protocol was not specified in an intelligible
     /// way.
-    MaformedCryptoProtocol,
+    MalformedCryptoProtocol,
     /// Unable to load a config file.
     NoConfig,
     /// Unable to load a database.
@@ -101,7 +101,7 @@ pub fn wrap(rc: c.notmuch_status_t) Error!void {
         .ignored => error.Ignored,
         .illegal_argument => error.IllegalArgument,
         .iterator_exhausted => error.IteratorExhausted,
-        .malformed_crypto_protocol => error.MaformedCryptoProtocol,
+        .malformed_crypto_protocol => error.MalformedCryptoProtocol,
         .no_config => error.NoConfig,
         .no_database => error.NoDatabase,
         .no_mail_root => error.NoMailRoot,

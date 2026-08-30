@@ -120,6 +120,11 @@ pub const OpenResult = union(enum) {
 
 /// Open an existing notmuch database located at `database_path`, using
 /// configuration in `config_path`.
+///
+/// On success the caller owns the returned database and should call `deinit`
+/// when finished with it. On failure the `err` variant carries the error and
+/// an optional human-readable message; the caller should call its `deinit` to
+/// free the message.
 pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
         return .{
@@ -194,6 +199,11 @@ pub const CreateResult = union(enum) {
 };
 
 /// Create a new notmuch database.
+///
+/// On success the caller owns the returned database (open in read-write mode)
+/// and should call `deinit` when finished with it. On failure the `err`
+/// variant carries the error and an optional human-readable message; the
+/// caller should call its `deinit` to free the message.
 pub fn create(options: OpenCreateOptions) CreateResult {
     if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
         return .{
@@ -300,8 +310,11 @@ pub const CloseError = error{ XapianException, Unexpected };
 /// After `close` has been called, calls to other functions on
 /// objects derived from this database may either behave as if the database had
 /// not been closed (e.g., if the required data has been cached) or may fail
-/// with a NOTMUCH_STATUS_XAPIAN_EXCEPTION. The only further operation permitted
-/// on the database itself is to call notmuch_database_destroy.
+/// with `error.XapianException` or `error.Unexpected`. The only further
+/// operation permitted on the database itself is `deinit`.
+///
+/// If `close` returns `error.XapianException`, the database has still been
+/// closed, but there is no guarantee that any changes were flushed to disk.
 ///
 /// `close` can be called multiple times. Later calls have no
 /// effect.
@@ -319,6 +332,9 @@ pub fn close(self: *const Database) CloseError!void {
 }
 /// Compact the notmuch database, backing up the original database to the given
 /// path.
+///
+/// The database will be opened in read-write mode during the compaction
+/// process, to ensure no writes are made.
 ///
 /// If the optional callback function `status_cb` is non-`null`, it will be
 /// called with diagnostic and informational messages. The argument `closure` is
@@ -353,6 +369,9 @@ pub fn getPath(self: *const Database) ?[:0]const u8 {
 }
 
 /// Return the database format version of the database.
+///
+/// Returns `error.FormatVersionError` if the version cannot be determined
+/// (for example, when the database has been closed).
 pub fn getVersion(self: *const Database) error{FormatVersionError}!u32 {
     const version = c.notmuch_database_get_version(self.database);
     if (version == 0) return error.FormatVersionError;
@@ -412,7 +431,7 @@ pub fn beginAtomic(self: *const Database) error{ XapianException, Unexpected }!v
 }
 
 /// Indicate the end of an atomic database operation. If repeated (with matching
-/// `beginAtomic`) "database.autocommit" times, commit the the transaction and
+/// `beginAtomic`) "database.autocommit" times, commit the transaction and
 /// all previous (non-cancelled) transactions to the database.
 pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException, Unexpected }!void {
     switch (status(c.notmuch_database_end_atomic(self.database))) {
@@ -476,7 +495,8 @@ pub fn getRevision(self: *const Database) Revision {
 /// `null`.
 ///
 /// Otherwise the returned directory object is owned by the database and as
-/// such, will only be valid until `destroy` is called.
+/// such, will only be valid until the database is deinitialized with
+/// `Database.deinit`.
 pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!?Directory {
     var directory: ?*c.notmuch_directory_t = null;
 
@@ -502,6 +522,8 @@ pub const IndexFileError = error{
     ReadOnlyDatabase,
     /// The caller must upgrade the database to use this function.
     UpgradeRequired,
+    /// A Xapian exception occurred, message not added.
+    XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,
 };
@@ -516,8 +538,8 @@ pub const IndexFileError = error{
 /// that match the path of `database`.
 ///
 /// The file should be a single mail message (not a multi-message mbox) that is
-/// expected to remain at its current location, (since the notmuch database will
-/// reference the filename, and will not copy the entire contents of the file.
+/// expected to remain at its current location (since the notmuch database will
+/// reference the filename, and will not copy the entire contents of the file).
 ///
 /// If another message with the same message ID already exists in the database,
 /// rather than creating a new message, this adds the search terms from the
@@ -529,11 +551,9 @@ pub const IndexFileError = error{
 /// indexing options that should govern the indexing of this specific
 /// `filename`.
 ///
-/// Note that this does not synchronise Maildir flags to notmuch flags,
-/// regardless of the value of `maildir.synchronize_flags`. Future calls to
-/// notmuch-new(1) will also not synchronise flags, since the file's current
-/// mtime shall be recorded as indexed. If flags ought to be synchronised,
-/// explicitly call notmuch_message_maildir_flags_to_tags.
+/// Note that this does not synchronise Maildir flags to notmuch tags,
+/// regardless of the value of `maildir.synchronize_flags`. If flags ought to
+/// be synchronised, explicitly call `Message.maildirFlagsToTags`.
 pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) IndexFileError!void {
     return switch (status(c.notmuch_database_index_file(
         self.database,
@@ -547,6 +567,7 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
         .file_not_email => error.FileNotEmail,
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
+        .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
 }
@@ -561,8 +582,8 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
 /// that match the path of `database`.
 ///
 /// The file should be a single mail message (not a multi-message mbox) that is
-/// expected to remain at its current location, (since the notmuch database will
-/// reference the filename, and will not copy the entire contents of the file.
+/// expected to remain at its current location (since the notmuch database will
+/// reference the filename, and will not copy the entire contents of the file).
 ///
 /// If another message with the same message ID already exists in the database,
 /// rather than creating a new message, this adds the search terms from the
@@ -576,13 +597,11 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
 ///
 /// On successful return, a message object will be returned that can be used for
 /// things such as adding tags to the just-added message. The user should call
-/// `Message.destroy` when done with the message.
+/// `Message.deinit` when done with the message.
 ///
-/// Note that this does not synchronise Maildir flags to notmuch flags,
-/// regardless of the value of maildir.synchronize_flags. Future calls to
-/// notmuch-new(1) will also not synchronise flags, since the file's current
-/// mtime shall be recorded as indexed. If flags ought to be synchronised,
-/// explicitly call notmuch_message_maildir_flags_to_tags.
+/// Note that this does not synchronise Maildir flags to notmuch tags,
+/// regardless of the value of `maildir.synchronize_flags`. If flags ought to
+/// be synchronised, explicitly call `Message.maildirFlagsToTags`.
 pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexopts: ?IndexOpts) Error!Message {
     var message: ?*c.notmuch_message_t = null;
     return switch (status(c.notmuch_database_index_file(
@@ -603,6 +622,7 @@ pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexo
         .file_not_email => error.FileNotEmail,
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
+        .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
 }
@@ -642,6 +662,9 @@ pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessag
 pub const FindMessageError = error{
     /// Out of memory creating message object.
     OutOfMemory,
+    /// The caller must upgrade the database to use this function
+    /// (`findMessageByFilename` only).
+    UpgradeRequired,
     /// A Xapian exception occurred.
     XapianException,
     /// libnotmuch returned an undocumented status code.
@@ -684,6 +707,7 @@ pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) Find
         },
         .null_pointer => unreachable,
         .out_of_memory => error.OutOfMemory,
+        .upgrade_required => error.UpgradeRequired,
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
@@ -735,6 +759,8 @@ pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
 /// See `Query.setSort` for controlling the order of results. See
 /// `Query.searchMessages` and `Query.searchThreads` to actually execute the
 /// query.
+///
+/// The caller should call `Query.deinit` when finished with the query.
 pub fn queryCreate(self: *const Database, query_string: [:0]const u8) error{OutOfMemory}!Query {
     return .init(c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory);
 }
@@ -777,6 +803,8 @@ pub fn configGet(self: *const Database, key: Config) Error!?[:0]const u8 {
 }
 
 /// Set config `key` to `value`.
+///
+/// The database must be open in read-write mode.
 pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!void {
     try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
 }
@@ -785,6 +813,8 @@ pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!
 ///
 /// These values reflect all configuration information given at the
 /// time the database was opened.
+///
+/// Returns `null` in case of error.
 pub fn configGetValues(
     self: *const Database,
     /// configuration key
@@ -799,6 +829,8 @@ pub fn configGetValues(
 ///
 /// These values reflect all configuration information given at the
 /// time the database was opened.
+///
+/// Returns `null` in case of error.
 pub fn configGetValuesString(
     self: *const Database,
     /// configuration key
@@ -809,8 +841,10 @@ pub fn configGetValuesString(
     };
 }
 
-/// Returns an iterator for a (key, value) configuration pairs. Returns `null`
-/// in case of error.
+/// Returns an iterator for (key, value) configuration pairs whose keys start
+/// with `prefix`. Pass "" as the prefix to iterate over all pairs.
+///
+/// Returns `null` in case of error.
 pub fn configGetPairs(self: *const Database, prefix: [:0]const u8) ?PairsIterator {
     return .{
         .pairs = c.notmuch_config_get_pairs(self.database, prefix) orelse return null,

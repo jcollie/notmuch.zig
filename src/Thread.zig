@@ -50,7 +50,7 @@ pub fn getTotalFiles(self: *const Thread) usize {
 /// thread. It will only iterate over the messages in the thread which are not
 /// replies to other messages in the thread.
 ///
-/// The returned list will be denitialized when the thread is deinitialized.
+/// The returned list will be deinitialized when the thread is deinitialized.
 pub fn getToplevelMessages(self: *const Thread) MessagesIterator {
     return .{
         .messages = c.notmuch_thread_get_toplevel_messages(self.thread),
@@ -59,7 +59,7 @@ pub fn getToplevelMessages(self: *const Thread) MessagesIterator {
 
 /// Get a `MessagesIterator` for all messages in `Thread` in oldest-first order.
 ///
-/// The returned list will be denitialized when the thread is deinitialized.
+/// The returned list will be deinitialized when the thread is deinitialized.
 pub fn getMessages(self: *const Thread) MessagesIterator {
     return .{
         .messages = c.notmuch_thread_get_messages(self.thread),
@@ -132,7 +132,7 @@ pub fn getNewestDate(self: *const Thread) i64 {
 ///
 /// The tags object is owned by the thread and as such, will only be valid for
 /// as long as the thread is valid, which is until `deinit` is called or until
-/// the query from which it derived is destroyed).
+/// the query from which it derived is destroyed.
 pub fn getTags(self: *const Thread) TagsIterator {
     return .{
         .tags = c.notmuch_thread_get_tags(self.thread),

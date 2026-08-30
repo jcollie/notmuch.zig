@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapped around the `notmuch` C APIs that deal with index options.
+//! Zig wrapper around the `notmuch` C APIs that deal with index options.
 const IndexOpts = @This();
 
 const std = @import("std");

@@ -24,7 +24,7 @@ directory: *c.notmuch_directory_t,
 ///
 ///   o Read the mtime of a directory from the filesystem
 ///
-///   o Call `Directory.indexFile` for all mail files in the directory
+///   o Call `Database.indexFile` for all mail files in the directory
 ///
 ///   o Call `setMtime` with the mtime read from the
 ///     filesystem.

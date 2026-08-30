@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapped around the `notmuch` C APIs that deal with messages.
+//! Zig wrapper around the `notmuch` C APIs that deal with messages.
 const Message = @This();
 
 const std = @import("std");
@@ -36,7 +36,7 @@ pub fn getDatabase(self: *const Message) Database {
 /// or freed by the caller and will only be valid for as long as the message is
 /// valid, which is until the query from which it derived is destroyed.
 ///
-/// This function will return `null` if triggers an unhandled Xapian exception.
+/// This function will return `null` if it triggers an unhandled Xapian exception.
 pub fn getMessageID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_message_id(self.message) orelse return null);
 }
@@ -46,9 +46,9 @@ pub fn getMessageID(self: *const Message) ?[:0]const u8 {
 /// The returned string belongs to `Message` and as such, should not be modified
 /// or freed by the caller and will only be valid for as long as the message is
 /// valid, which is until the user calls `deinit` or until the query from which
-/// it derived is deinitialized).
+/// it derived is deinitialized.
 ///
-/// This function will return `null` if triggers an unhandled Xapian exception.
+/// This function will return `null` if it triggers an unhandled Xapian exception.
 pub fn getThreadID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_thread_id(self.message) orelse return null);
 }
@@ -57,7 +57,7 @@ pub fn getThreadID(self: *const Message) ?[:0]const u8 {
 ///
 /// Note: This call only makes sense if `Message` was ultimately obtained from
 /// a `Thread` object, (such as by coming directly from the result of calling
-/// `Threads.getToplevelMessages` or by any number of subsequent calls to
+/// `Thread.getToplevelMessages` or by any number of subsequent calls to
 /// `getReplies`).
 ///
 /// If `Message` was obtained through some non-thread means, (such as by a
@@ -67,10 +67,10 @@ pub fn getThreadID(self: *const Message) ?[:0]const u8 {
 /// If there are no replies to `Message`, this function will return an empty
 /// iterator.
 ///
-/// This function also return an empty iterator if it triggers a Xapian
+/// This function also returns an empty iterator if it triggers a Xapian
 /// exception.
 ///
-/// The returned list will be deinitialized when the thread is denitialized.
+/// The returned list will be deinitialized when the thread is deinitialized.
 pub fn getReplies(self: *const Message) MessagesIterator {
     return .{
         .messages = c.notmuch_message_get_replies(self.message),
@@ -108,7 +108,7 @@ pub const GetFilenameError = error{
 /// arbitrarily return a single one of those filenames. See `getFilenames` for
 /// returning the complete list of filenames.
 ///
-/// This function returns NULL if it triggers a Xapian exception.
+/// Returns `error.XapianException` if the call triggers a Xapian exception.
 pub fn getFilename(self: *const Message) GetFilenameError![:0]const u8 {
     return std.mem.span(c.notmuch_message_get_filename(self.message) orelse return error.XapianException);
 }
@@ -125,12 +125,19 @@ pub const GetFilenamesError = error{
 ///
 /// Each filename in the iterator is an absolute filename (the initial component
 /// will match `Database.getPath`).
+///
+/// Returns `error.XapianException` if the call triggers a Xapian exception.
 pub fn getFilenames(self: *const Message) GetFilenamesError!FilenamesIterator {
     return .{
         .filenames = c.notmuch_message_get_filenames(self.message) orelse return error.XapianException,
     };
 }
 
+/// Re-index the e-mail corresponding to `Message` using the supplied index
+/// options (or the database defaults when `indexopts` is `null`).
+///
+/// After reindexing, discard this message object by calling `deinit`: it
+/// refers to the original message, not to the reindexed message.
 pub fn reindex(self: *const Message, indexopts: ?IndexOpts) Error!void {
     return switch (status(c.notmuch_message_reindex(self.message, if (indexopts) |i| i.indexopts else null))) {
         .success => {},
@@ -372,7 +379,7 @@ pub fn tagsToMaildirFlags(self: *const Message) Error!void {
 ///    try message.freeze();
 ///    defer message.thaw() catch {};
 ///
-///    message.removeAllTags();
+///    try message.removeAllTags();
 ///
 ///    for (tags) |tag|
 ///        try message.addTag(tag);
@@ -510,10 +517,10 @@ pub fn removeAllPropertiesWithPrefix(
     };
 }
 
-/// Get the properties for `Message`, returning a `PropertyIterator` object
+/// Get the properties for `Message`, returning a `PropertiesIterator` object
 /// which can be used to iterate over all properties.
 ///
-/// The `PropertyIterator` object is owned by the message and as such, will only
+/// The `PropertiesIterator` object is owned by the message and as such, will only
 /// be valid for as long as the message is valid, which is until the query from
 /// which it derived is deinitialized.
 pub fn getProperties(
