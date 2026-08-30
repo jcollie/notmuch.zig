@@ -1156,6 +1156,29 @@ pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, 
     return .init(query orelse return error.OutOfMemory);
 }
 
+test queryCreateWithSyntax {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // The s-expression syntax: () matches all messages.
+    const all = try db.queryCreateWithSyntax("()", .sexp);
+    defer all.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len), try all.countMessages());
+
+    // A field query in s-expression form.
+    const lunch = try db.queryCreateWithSyntax("(subject lunch)", .sexp);
+    defer lunch.deinit();
+    try std.testing.expectEqual(@as(u32, 2), try lunch.countMessages());
+
+    // The default Xapian syntax is available by name as well.
+    const xapian = try db.queryCreateWithSyntax("subject:lunch", .xapian);
+    defer xapian.deinit();
+    try std.testing.expectEqual(@as(u32, 2), try xapian.countMessages());
+}
+
 /// Get a configuration value from an open database.
 ///
 /// This value reflects all configuration information given at the time
@@ -1166,6 +1189,23 @@ pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, 
 /// nor freed by the caller.
 pub fn configGet(self: *const Database, key: Config) Error!?[:0]const u8 {
     return std.mem.span(c.notmuch_config_get(self.database, @intFromEnum(key)) orelse return null);
+}
+
+test configGet {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A value read from the configuration file the database was opened with.
+    try std.testing.expectEqualStrings(
+        "zig@example.org",
+        try db.configGet(.primary_email) orelse return error.TestUnexpectedResult,
+    );
+
+    // A key with neither a configured value nor a default reads as null.
+    try std.testing.expectEqual(@as(?[:0]const u8, null), try db.configGet(.other_email));
 }
 
 /// Set config `key` to `value`.
