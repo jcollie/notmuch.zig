@@ -403,6 +403,167 @@ test create {
     try std.testing.expect(r == .ok);
 }
 
+pub const LoadConfigError = error{
+    /// libnotmuch is older than 5.6, the minimum version these bindings
+    /// support. Reported by the bindings themselves, before calling into
+    /// libnotmuch.
+    NotmuchVersion,
+    /// Out of memory.
+    OutOfMemory,
+    /// An error occurred trying to open the database or configuration file
+    /// (such as permission denied, or file not found).
+    FileError,
+    /// A Xapian exception occurred.
+    XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
+};
+
+/// A non-fatal condition reported by `loadConfig`.
+pub const LoadConfigWarning = enum {
+    /// No configuration file was loaded; defaults and any configuration
+    /// stored in the database apply.
+    no_config,
+    /// No configuration was loaded from a database.
+    no_database,
+};
+
+/// The result of `loadConfig`: either a configuration-only database object
+/// (possibly with a non-fatal warning) or an error paired with libnotmuch's
+/// human-readable message.
+pub const LoadConfigResult = union(enum) {
+    ok: struct {
+        /// A database object suitable for configuration access (`configGet`
+        /// and friends); the underlying Xapian database is not opened. The
+        /// caller owns it and should call `Database.deinit` when finished.
+        database: Database,
+        /// A non-fatal condition encountered while loading, or `null` if
+        /// configuration was loaded from both the config file and the
+        /// database.
+        warning: ?LoadConfigWarning,
+    },
+    /// The failure, along with an optional message from libnotmuch; call
+    /// `deinit` to free the message.
+    err: struct {
+        /// The error corresponding to the status code libnotmuch returned.
+        err: LoadConfigError,
+        /// The raw error message, if any. Use `message` to read it and
+        /// `deinit` to free it.
+        msg: [*c]u8,
+
+        /// Return the human-readable error message from libnotmuch, or
+        /// `null` if there is none. The string is owned by this result and
+        /// is freed by `deinit`.
+        pub fn message(self: @This()) ?[:0]const u8 {
+            return std.mem.span(self.msg orelse return null);
+        }
+
+        /// Free the error message. Safe to call when there is no message.
+        pub fn deinit(self: @This()) void {
+            c.free(@ptrCast(@constCast(self.msg)));
+        }
+    },
+};
+
+/// Load configuration from the config file, database, and/or defaults,
+/// without opening the underlying Xapian database.
+///
+/// This is a lighter-weight alternative to `open` when only configuration
+/// access is needed: the returned database object supports `configGet` and
+/// the other configuration functions, but not searching or indexing. Missing
+/// configuration sources are reported as non-fatal warnings rather than
+/// errors.
+pub fn loadConfig(options: OpenCreateOptions) LoadConfigResult {
+    if (!c.LIBNOTMUCH_CHECK_VERSION(5, 6, 0)) {
+        return .{
+            .err = .{
+                .err = error.NotmuchVersion,
+                .msg = null,
+            },
+        };
+    }
+
+    var message: [*c]u8 = null;
+
+    var database: ?*c.notmuch_database_t = null;
+
+    const rc = status(c.notmuch_database_load_config(
+        options.database_path orelse null,
+        options.config_path orelse null,
+        options.profile orelse null,
+        &database,
+        &message,
+    ));
+    const err: LoadConfigError = switch (rc) {
+        .success, .no_config, .no_database => {
+            if (database) |db| {
+                if (message != null) c.free(@ptrCast(message));
+                return .{
+                    .ok = .{
+                        .database = .{ .database = db },
+                        .warning = switch (rc) {
+                            .success => null,
+                            .no_config => .no_config,
+                            .no_database => .no_database,
+                            else => unreachable,
+                        },
+                    },
+                };
+            }
+            return .{ .err = .{ .err = error.Unexpected, .msg = message } };
+        },
+        .out_of_memory => error.OutOfMemory,
+        .file_error => error.FileError,
+        .xapian_exception => error.XapianException,
+        else => error.Unexpected,
+    };
+
+    return .{
+        .err = .{
+            .err = err,
+            .msg = message,
+        },
+    };
+}
+
+test loadConfig {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    // Load configuration through the fixture's config file, without opening
+    // the Xapian database.
+    const config_path = try alloc.dupeZ(u8, test_db.database.configPath() orelse return error.TestUnexpectedResult);
+    defer alloc.free(config_path);
+
+    const loaded = switch (loadConfig(.{ .config_path = config_path })) {
+        .ok => |ok| ok,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer loaded.database.deinit() catch {};
+    try std.testing.expectEqual(@as(?LoadConfigWarning, null), loaded.warning);
+    try std.testing.expectEqualStrings(
+        "zig@example.org",
+        try loaded.database.configGet(.primary_email) orelse return error.TestUnexpectedResult,
+    );
+
+    // Missing configuration sources are non-fatal warnings.
+    const missing = switch (loadConfig(.{ .config_path = "", .database_path = "/nonexistent/notmuch-zig" })) {
+        .ok => |ok| ok,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer missing.database.deinit() catch {};
+    try std.testing.expect(missing.warning != null);
+}
+
 pub const CloseError = error{
     /// A Xapian exception occurred. The database has still been closed, but
     /// there is no guarantee that any changes were flushed to disk.
@@ -495,6 +656,36 @@ test getPath {
     const path = db.getPath() orelse return error.TestUnexpectedResult;
     try std.testing.expect(std.fs.path.isAbsolute(path));
     try std.testing.expectEqualStrings("mail", std.fs.path.basename(path));
+}
+
+/// Retrieve the last status string for the database: the human-readable
+/// diagnostic accompanying the most recent failure, if libnotmuch recorded
+/// one. Returns `null` when there is none.
+///
+/// The returned string is owned by the database: it must not be modified or
+/// freed by the caller, it may be invalidated by any later operation that
+/// records a new diagnostic, and it is freed along with the database by
+/// `deinit`. Copy it if it needs to outlive either.
+pub fn statusString(self: *const Database) ?[:0]const u8 {
+    return std.mem.span(c.notmuch_database_status_string(self.database) orelse return null);
+}
+
+test statusString {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A healthy database has no status string.
+    try std.testing.expectEqual(@as(?[:0]const u8, null), db.statusString());
+
+    // After a failure, the diagnostic is retrievable.
+    const bad = try db.queryCreateWithSyntax("(unbalanced", .sexp);
+    defer bad.deinit();
+    try std.testing.expectError(error.BadQuerySyntax, bad.countMessages());
+    const diagnostic = db.statusString() orelse return error.TestUnexpectedResult;
+    try std.testing.expect(diagnostic.len > 0);
 }
 
 /// Return the database format version of the database.

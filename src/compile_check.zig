@@ -22,6 +22,9 @@ test "every wrapper body compiles" {
     const db: notmuch.Database = undefined;
     _ = notmuch.Database.open(.read_only, .{});
     _ = notmuch.Database.create(.{});
+    _ = notmuch.Database.loadConfig(.{});
+    _ = db.statusString();
+    _ = notmuch.Status.success.toString();
     try db.close();
     try db.compact("backup", null, null);
     try db.deinit();

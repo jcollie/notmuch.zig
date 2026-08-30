@@ -245,6 +245,21 @@ pub const Status = enum(u5) {
         return @enumFromInt(rc);
     }
 
+    /// Get libnotmuch's human-readable string representation of this status
+    /// value.
+    ///
+    /// The returned string is a static, read-only string owned by
+    /// libnotmuch: it must not be modified or freed, and it remains valid
+    /// for the lifetime of the program.
+    pub fn toString(self: Status) [:0]const u8 {
+        return std.mem.span(c.notmuch_status_to_string(@intFromEnum(self)));
+    }
+
+    test toString {
+        try std.testing.expectEqualStrings("No error occurred", Status.success.toString());
+        try std.testing.expect(Status.read_only_database.toString().len > 0);
+    }
+
     comptime {
         checkEnum(@This(), "NOTMUCH_STATUS_", &.{"NOTMUCH_STATUS_LAST_STATUS"});
     }

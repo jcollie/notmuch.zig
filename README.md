@@ -21,8 +21,7 @@ narrowed set also includes `error.Unexpected` as a catch-all, so an
 undocumented status surfaces as a recoverable error rather than a crash.
 
 > **Status:** early. The API still changes without notice. All of the current
-> (non-deprecated) `libnotmuch` API is wrapped except a few introspection
-> functions.
+> (non-deprecated) `libnotmuch` API is wrapped.
 
 ## Requirements
 
@@ -164,7 +163,7 @@ defer allocator.free(content);
 
 | Type | Covers |
 | --- | --- |
-| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; atomic sections; revisions; indexing and removing files; message lookup; directory lookup; typed and string-keyed configuration access, values and pairs |
+| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; configuration-only loading; atomic sections; revisions; indexing and removing files; message lookup; directory lookup; typed and string-keyed configuration access, values and pairs; status strings |
 | `notmuch.Query` | query strings and syntax, sort order, tag exclusions, message and thread searches, result counts |
 | `notmuch.Message` | message and thread IDs, headers, dates, filenames, flags, tags, maildir flag synchronization, properties, freeze/thaw, reindexing |
 | `notmuch.Thread` | thread ID, subject, authors, oldest/newest dates, message and file counts, contained messages, tags |
@@ -173,6 +172,7 @@ defer allocator.free(content);
 | `notmuch.MessagesIterator`, `notmuch.ThreadsIterator`, `notmuch.FilenamesIterator` | iteration over search results |
 | `notmuch.TagsIterator`, `notmuch.PropertiesIterator`, `notmuch.PairsIterator`, `notmuch.ValuesIterator` | iteration over tags, message properties, and configuration data |
 | `notmuch.Error` | the full set of `notmuch_status_t` codes as Zig errors, plus `error.Unexpected` for status codes a function is not documented to return |
+| `notmuch.Status` | the raw `notmuch_status_t` codes as a Zig enum, with libnotmuch's human-readable descriptions via `toString` |
 | `notmuch.compact`, `notmuch.builtWith`, `notmuch.tag_max` | module-level helpers |
 | `notmuch.helpers.MessageWriter`, `notmuch.helpers.MessageReader` | streaming an email through a `std.Io.Writer` into the mail store and indexing it, and reading a message's raw content through a `std.Io.Reader` (conveniences unique to these bindings) |
 

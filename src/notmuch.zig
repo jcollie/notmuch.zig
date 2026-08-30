@@ -31,6 +31,7 @@ pub const MessagesIterator = @import("MessagesIterator.zig");
 pub const PairsIterator = @import("PairsIterator.zig");
 pub const PropertiesIterator = @import("PropertiesIterator.zig");
 pub const Query = @import("Query.zig");
+pub const Status = @import("enums.zig").Status;
 pub const TagsIterator = @import("TagsIterator.zig");
 pub const Thread = @import("Thread.zig");
 pub const ThreadsIterator = @import("ThreadsIterator.zig");
