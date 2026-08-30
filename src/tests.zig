@@ -94,6 +94,36 @@ test "Database revisions increase with commits" {
     try std.testing.expect(try after.compare(before) == .gt);
 }
 
+test "Database revisions are monotonic across commits" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    var previous = db.getRevision();
+    for ([_][:0]const u8{ "mono-one", "mono-two", "mono-three" }) |tag| {
+        try message.addTag(tag);
+        const current = db.getRevision();
+        try std.testing.expect(try current.compare(previous) == .gt);
+        previous = current;
+    }
+}
+
+test "Database UUIDs are unique per database" {
+    var test_db1 = try fixture.corpusDatabase();
+    defer test_db1.deinit();
+    var test_db2 = try fixture.corpusDatabase();
+    defer test_db2.deinit();
+
+    const rev1 = test_db1.database.getRevision();
+    const rev2 = test_db2.database.getRevision();
+
+    try std.testing.expect(!std.mem.eql(u8, rev1.uuid, rev2.uuid));
+    try std.testing.expectError(error.DatabaseMismatch, rev1.compare(rev2));
+}
+
 test "Database atomic sections" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
