@@ -10,6 +10,8 @@
 //! sooner.
 const MessagesIterator = @This();
 
+const std = @import("std");
+
 const c = @import("c");
 
 const Message = @import("Message.zig");
@@ -47,6 +49,40 @@ pub fn collectTags(self: *const MessagesIterator) ?TagsIterator {
     };
 }
 
+test collectTags {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const one = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer one.deinit();
+    try one.addTag("red");
+    const two = try db.findMessage("two@example.org") orelse return error.TestUnexpectedResult;
+    defer two.deinit();
+    try two.addTag("blue");
+
+    const query = try db.queryCreate("subject:lunch");
+    defer query.deinit();
+    var messages = try query.searchMessages();
+    defer messages.deinit();
+
+    // The tags of all remaining messages, gathered in one pass. This
+    // exhausts the message iterator, per the warning above.
+    var collected = messages.collectTags() orelse return error.TestUnexpectedResult;
+    defer collected.deinit();
+    var saw_red = false;
+    var saw_blue = false;
+    while (collected.next()) |tag| {
+        if (std.mem.eql(u8, tag, "red")) saw_red = true;
+        if (std.mem.eql(u8, tag, "blue")) saw_blue = true;
+    }
+    try std.testing.expect(saw_red);
+    try std.testing.expect(saw_blue);
+    try std.testing.expect(try messages.next() == null);
+}
+
 pub fn next(self: *const MessagesIterator) NextError!?Message {
     const messages = self.messages orelse return null;
     return switch (status(c.notmuch_messages_status(messages))) {
@@ -62,6 +98,24 @@ pub fn next(self: *const MessagesIterator) NextError!?Message {
         .out_of_memory => error.OutOfMemory,
         else => error.Unexpected,
     };
+}
+
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    var messages = try query.searchMessages();
+    defer messages.deinit();
+
+    // Iterate all matches; after exhaustion, next keeps returning null.
+    var count: usize = 0;
+    while (try messages.next()) |message| : (count += 1) message.deinit();
+    try std.testing.expectEqual(fixture.corpus.len, count);
+    try std.testing.expect(try messages.next() == null);
 }
 
 /// Deinitialize a `MessagesIterator` object.

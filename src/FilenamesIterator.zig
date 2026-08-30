@@ -27,6 +27,24 @@ pub fn next(self: *FilenamesIterator) ?[:0]const u8 {
     return std.mem.span(c.notmuch_filenames_get(filenames) orelse unreachable);
 }
 
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // The corpus message is backed by a single file; after exhaustion,
+    // next keeps returning null.
+    var filenames = try message.getFilenames();
+    defer filenames.deinit();
+    const filename = filenames.next() orelse return error.TestUnexpectedResult;
+    try std.testing.expect(std.mem.endsWith(u8, filename, "one.eml"));
+    try std.testing.expect(filenames.next() == null);
+}
+
 /// Deinitialize a `FilenamesIterator` object.
 ///
 /// It's not strictly necessary to call this function. All memory from the

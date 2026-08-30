@@ -34,6 +34,29 @@ pub fn next(self: *PairsIterator) ?Pair {
     };
 }
 
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.user_name, "Test User");
+
+    // Each pair carries the full dotted key and its value; a key with no
+    // value yields a null value.
+    var pairs = db.configGetPairs("user.") orelse return error.TestUnexpectedResult;
+    defer pairs.deinit();
+    var saw_name = false;
+    while (pairs.next()) |pair| {
+        if (std.mem.eql(u8, pair.key, "user.name")) {
+            saw_name = true;
+            try std.testing.expectEqualStrings("Test User", pair.value orelse "");
+        }
+    }
+    try std.testing.expect(saw_name);
+}
+
 /// Deinitialize a config pairs iterator, along with any associated resources.
 pub fn deinit(self: *PairsIterator) void {
     c.notmuch_config_pairs_destroy(self.pairs);

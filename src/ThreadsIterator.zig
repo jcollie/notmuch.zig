@@ -5,6 +5,8 @@
 //! lists of threads.
 pub const ThreadsIterator = @This();
 
+const std = @import("std");
+
 const c = @import("c");
 
 const Thread = @import("Thread.zig");
@@ -39,6 +41,25 @@ pub fn next(self: *ThreadsIterator) NextError!?Thread {
         .out_of_memory => error.OutOfMemory,
         else => error.Unexpected,
     };
+}
+
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    var threads = try query.searchThreads();
+    defer threads.deinit();
+
+    // The corpus's four messages form three threads; after exhaustion,
+    // next keeps returning null.
+    var count: usize = 0;
+    while (try threads.next()) |thread| : (count += 1) thread.deinit();
+    try std.testing.expectEqual(@as(usize, 3), count);
+    try std.testing.expect(try threads.next() == null);
 }
 
 /// Deinitialize a `ThreadsIterator` object.

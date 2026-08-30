@@ -205,37 +205,6 @@ test "Message maildir flags" {
     try message.maildirFlagsToTags();
 }
 
-test "MessagesIterator tag collection" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-    const db = test_db.database;
-
-    const one = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
-    defer one.deinit();
-    try one.addTag("red");
-    const two = try db.findMessage("two@example.org") orelse return error.TestUnexpectedResult;
-    defer two.deinit();
-    try two.addTag("blue");
-
-    const query = try db.queryCreate("subject:lunch");
-    defer query.deinit();
-
-    var messages = try query.searchMessages();
-    defer messages.deinit();
-    // collectTags gathers the tags of all remaining messages in one pass
-    // (and exhausts the iterator, per its warning).
-    var collected = messages.collectTags() orelse return error.TestUnexpectedResult;
-    defer collected.deinit();
-    var saw_red = false;
-    var saw_blue = false;
-    while (collected.next()) |tag| {
-        if (std.mem.eql(u8, tag, "red")) saw_red = true;
-        if (std.mem.eql(u8, tag, "blue")) saw_blue = true;
-    }
-    try std.testing.expect(saw_red);
-    try std.testing.expect(saw_blue);
-}
-
 test "Database.open error reporting" {
     const missing = notmuch.Database.open(.read_only, .{
         .database_path = "/nonexistent/notmuch-zig-test",

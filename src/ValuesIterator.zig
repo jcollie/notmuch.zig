@@ -25,9 +25,45 @@ pub fn next(self: *ValuesIterator) ?[:0]const u8 {
     return std.mem.span(c.notmuch_config_values_get(self.values) orelse unreachable);
 }
 
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.exclude_tags, "spam;deleted");
+
+    // Values are yielded in configuration order; after exhaustion, next
+    // keeps returning null.
+    var values = db.configGetValues(.exclude_tags) orelse return error.TestUnexpectedResult;
+    defer values.deinit();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("deleted", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expect(values.next() == null);
+}
+
 /// Reset the `ValuesIterator` to the first element.
 pub fn start(self: *ValuesIterator) void {
     c.notmuch_config_values_start(self.values);
+}
+
+test start {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.exclude_tags, "spam;deleted");
+
+    var values = db.configGetValues(.exclude_tags) orelse return error.TestUnexpectedResult;
+    defer values.deinit();
+    while (values.next()) |_| {}
+
+    // start rewinds the exhausted iterator to the first value.
+    values.start();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
 }
 
 /// Deinitialize a config values iterator, along with any associated

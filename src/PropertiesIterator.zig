@@ -29,6 +29,28 @@ pub fn next(self: PropertiesIterator) ?KV {
     };
 }
 
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addProperty("zig.key", "first");
+    try message.addProperty("zig.key", "second");
+
+    // Each entry is a key/value pair; multiple values for one key yield
+    // one entry per value. After exhaustion, next keeps returning null.
+    var properties = message.getProperties("zig.key", true);
+    defer properties.deinit();
+    var count: usize = 0;
+    while (properties.next()) |kv| : (count += 1)
+        try std.testing.expectEqualStrings("zig.key", kv.key);
+    try std.testing.expectEqual(@as(usize, 2), count);
+    try std.testing.expect(properties.next() == null);
+}
+
 pub fn deinit(self: PropertiesIterator) void {
     const properties = self.properties orelse return;
     c.notmuch_message_properties_destroy(properties);

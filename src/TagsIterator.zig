@@ -24,6 +24,26 @@ pub fn next(self: *TagsIterator) ?[:0]const u8 {
     return std.mem.span(c.notmuch_tags_get(tags) orelse unreachable);
 }
 
+test next {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("beta");
+    try message.addTag("alpha");
+
+    // Tags are iterated in sorted order, regardless of insertion order;
+    // after exhaustion, next keeps returning null.
+    var tags = message.getTags();
+    defer tags.deinit();
+    try std.testing.expectEqualStrings("alpha", tags.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("beta", tags.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expect(tags.next() == null);
+}
+
 pub fn deinit(self: *TagsIterator) void {
     c.notmuch_tags_destroy(self.tags);
 }
