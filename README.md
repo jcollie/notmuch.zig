@@ -12,6 +12,14 @@ per function, so you only handle the errors a given call can actually return),
 C enums become Zig enums that are checked against the header at compile time,
 and the various `notmuch_*_t` list types become iterators with a `next` method.
 
+The narrowed error sets are based on the status codes each function documents,
+plus the undocumented ones it has been observed to return in practice (for
+example, opening a missing database yields `error.NoDatabase`). Because
+`libnotmuch` can still surprise — a newer version may add status codes, and
+operations on a closed database return codes no function documents — every
+narrowed set also includes `error.Unexpected` as a catch-all, so an
+undocumented status surfaces as a recoverable error rather than a crash.
+
 > **Status:** early. The API still changes without notice, and not every part
 > of `libnotmuch` is wrapped yet.
 
@@ -140,7 +148,7 @@ release memory sooner than the enclosing query would.
 | `notmuch.IndexOpts` | indexing options, including the decryption policy |
 | `notmuch.MessagesIterator`, `notmuch.ThreadsIterator`, `notmuch.FilenamesIterator` | iteration over search results |
 | `notmuch.TagsIterator`, `notmuch.PropertiesIterator`, `notmuch.PairsIterator`, `notmuch.ValuesIterator` | iteration over tags, message properties, and configuration data |
-| `notmuch.Error` | the full set of `notmuch_status_t` codes as Zig errors |
+| `notmuch.Error` | the full set of `notmuch_status_t` codes as Zig errors, plus `error.Unexpected` for status codes a function is not documented to return |
 | `notmuch.compact`, `notmuch.builtWith`, `notmuch.tag_max` | module-level helpers |
 
 Full API documentation is generated from the source and published at
