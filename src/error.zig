@@ -11,6 +11,7 @@ const std = @import("std");
 const c = @import("c");
 
 const status = @import("enums.zig").status;
+const Status = @import("enums.zig").Status;
 
 pub const Error = error{
     /// Syntax error in query.
@@ -126,6 +127,19 @@ pub fn wrap(rc: c.notmuch_status_t) Error!void {
 }
 
 test wrap {
+    // NOTMUCH_STATUS_SUCCESS maps to no error at all.
     try wrap(c.NOTMUCH_STATUS_SUCCESS);
+
+    // Every other status code maps to its corresponding error.
+    try std.testing.expectError(error.OutOfMemory, wrap(c.NOTMUCH_STATUS_OUT_OF_MEMORY));
+    try std.testing.expectError(error.ReadOnlyDatabase, wrap(c.NOTMUCH_STATUS_READ_ONLY_DATABASE));
     try std.testing.expectError(error.BadQuerySyntax, wrap(c.NOTMUCH_STATUS_BAD_QUERY_SYNTAX));
+
+    // No status other than success maps to success.
+    inline for (@typeInfo(Status).@"enum".fields) |field| {
+        const code: Status = @enumFromInt(field.value);
+        if (code != .success) {
+            try std.testing.expect(std.meta.isError(wrap(@intCast(field.value))));
+        }
+    }
 }

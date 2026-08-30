@@ -148,6 +148,40 @@ pub const MessageWriter = struct {
         return self.name_buf[0..self.name_len];
     }
 
+    test filename {
+        const fixture = @import("testing.zig");
+
+        var test_db = try fixture.corpusDatabase();
+        defer test_db.deinit();
+        var buffer: [256]u8 = undefined;
+
+        // The generated name leads with the delivery timestamp so filenames
+        // sort by arrival, like those written by notmuch insert.
+        var mw = try MessageWriter.init(std.testing.io, test_db.database, &buffer, .{});
+        try std.testing.expect(std.ascii.isDigit(mw.filename()[0]));
+        try std.testing.expect(std.mem.indexOf(u8, mw.filename(), ".M") != null);
+
+        var name_buf: [name_capacity]u8 = undefined;
+        const name = name_buf[0..mw.filename().len];
+        @memcpy(name, mw.filename());
+
+        try mw.writer().writeAll(
+            \\From: Ivan <ivan@example.org>
+            \\To: Alice <alice@example.org>
+            \\Subject: Delivered under a generated name
+            \\Date: Sun, 07 Apr 2024 08:00:00 +0000
+            \\Message-ID: <nine@example.org>
+            \\
+            \\Short.
+            \\
+        );
+        const message = try mw.finish(null);
+        defer message.deinit();
+
+        // The indexed message was delivered under exactly that name.
+        try std.testing.expectEqualStrings(name, std.fs.path.basename(try message.getFilename()));
+    }
+
     /// Flush the email, atomically materialize it in the mail store, index
     /// it into the database, and return the indexed message. The caller owns
     /// the returned message. The database must be open in read-write mode.
@@ -180,6 +214,23 @@ pub const MessageWriter = struct {
         self.dir.close(io);
         self.* = undefined;
     }
+
+    test cancel {
+        const fixture = @import("testing.zig");
+        const io = std.testing.io;
+
+        var test_db = try fixture.corpusDatabase();
+        defer test_db.deinit();
+        var buffer: [256]u8 = undefined;
+
+        // A cancelled message leaves nothing behind at its destination.
+        var mw = try MessageWriter.init(io, test_db.database, &buffer, .{ .subdir = .new });
+        try mw.writer().writeAll("From: partial <partial@example.org>\n");
+        var path_buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "mail/new/{s}", .{mw.filename()});
+        mw.cancel();
+        try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, path, .{}));
+    }
 };
 
 test MessageWriter {
@@ -191,19 +242,8 @@ test MessageWriter {
     const db = test_db.database;
     var buffer: [256]u8 = undefined;
 
-    // A cancelled message leaves nothing behind at its destination.
-    var cancelled = try MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
-    try cancelled.writer().writeAll("From: partial <partial@example.org>\n");
-    var cancelled_path_buf: [128]u8 = undefined;
-    const cancelled_path = try std.fmt.bufPrint(&cancelled_path_buf, "mail/new/{s}", .{cancelled.filename()});
-    cancelled.cancel();
-    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, cancelled_path, .{}));
-
-    // A finished message is materialized in new/ and indexed. The generated
-    // name leads with the delivery timestamp so filenames sort by arrival.
+    // A finished message is materialized in new/ and indexed.
     var finished = try MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
-    try std.testing.expect(std.ascii.isDigit(finished.filename()[0]));
-    try std.testing.expect(std.mem.indexOf(u8, finished.filename(), ".M") != null);
     try finished.writer().writeAll(
         \\From: Grace <grace@example.org>
         \\To: Alice <alice@example.org>
