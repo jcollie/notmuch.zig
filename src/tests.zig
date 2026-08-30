@@ -582,15 +582,26 @@ test "Database.reopen revives a closed database" {
     try std.testing.expectEqualStrings("one@example.org", message.getMessageID() orelse "");
 }
 
-test "IndexOpts decrypt policy" {
+test "Database.getDefaultIndexOpts and the decrypt policy" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
+    const db = test_db.database;
 
-    const indexopts = test_db.database.getDefaultIndexOpts() orelse return error.TestUnexpectedResult;
+    // With no index.decrypt configuration, the default policy is auto.
+    const indexopts = db.getDefaultIndexOpts() orelse return error.TestUnexpectedResult;
     defer indexopts.deinit();
+    try std.testing.expectEqual(notmuch.IndexOpts.Decrypt.auto, indexopts.getDecryptPolicy());
 
-    try indexopts.setDecryptPolicy(.true);
-    try std.testing.expectEqual(notmuch.IndexOpts.Decrypt.true, indexopts.getDecryptPolicy());
+    // Every policy value round-trips.
+    for ([_]notmuch.IndexOpts.Decrypt{ .false, .true, .auto, .nostash }) |policy| {
+        try indexopts.setDecryptPolicy(policy);
+        try std.testing.expectEqual(policy, indexopts.getDecryptPolicy());
+    }
+
+    // Changing one options object does not change the database default.
+    const fresh = db.getDefaultIndexOpts() orelse return error.TestUnexpectedResult;
+    defer fresh.deinit();
+    try std.testing.expectEqual(notmuch.IndexOpts.Decrypt.auto, fresh.getDecryptPolicy());
 }
 
 test "Query string, sort, and database accessors" {
