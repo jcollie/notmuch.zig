@@ -443,9 +443,17 @@ pub fn close(self: *const Database) CloseError!void {
 /// If the optional callback function `status_cb` is non-`null`, it will be
 /// called with diagnostic and informational messages. The argument `closure` is
 /// passed verbatim to any callback invoked.
+///
+/// WARNING: In practice this function is hard to use safely. Compaction opens
+/// its own read-write handle to the database, so calling it through an open
+/// read-write handle fails with `error.XapianException` (a Xapian lock
+/// conflict) and can leave this handle unusable — even `reopen` may abort.
+/// A read-only or closed handle is rejected outright. Prefer the module-level
+/// `notmuch.compact`, which works on paths without an open database.
 pub fn compact(self: *const Database, backup_path: [:0]const u8, status_cb: ?StatusCallback, closure: ?*anyopaque) Error!void {
     try wrap(c.notmuch_database_compact_db(self.database, backup_path, status_cb, closure));
 }
+
 
 /// Deinit the notmuch database, closing it if necessary and freeing all
 /// associated resources.

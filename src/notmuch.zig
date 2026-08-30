@@ -54,6 +54,50 @@ pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?Databa
     try wrap(c.notmuch_database_compact(path, backup_path, status_cb, closure));
 }
 
+test compact {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    // Compaction opens the database itself, so no handle may be open on it:
+    // take the paths from the fixture, then destroy its handle first.
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.tmp.cleanup();
+    const root = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    defer alloc.free(root);
+    const backup_path = try std.fs.path.joinZ(alloc, &.{
+        std.fs.path.dirname(root) orelse return error.TestUnexpectedResult,
+        "backup",
+    });
+    defer alloc.free(backup_path);
+    test_db.database.deinit() catch {};
+
+    // The optional status callback receives diagnostic messages.
+    const callbacks = struct {
+        fn status_message(message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void {
+            _ = message;
+            _ = closure;
+        }
+    };
+    try compact(root, backup_path, callbacks.status_message, null);
+
+    // The original database was backed up to the given path...
+    try test_db.tmp.dir.access(io, "backup", .{});
+
+    // ...and the compacted database still holds the corpus.
+    const db = switch (Database.open(.read_only, .{ .database_path = root, .config_path = "" })) {
+        .ok => |db| db,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer db.deinit() catch {};
+    const query = try db.queryCreate("*");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len), try query.countMessages());
+}
+
 /// Interrogate the library for compile time features.
 pub fn builtWith(name: [:0]const u8) bool {
     return c.notmuch_built_with(name) != 0;
