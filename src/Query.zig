@@ -166,6 +166,9 @@ pub fn searchMessages(self: *const Query) Error!MessagesIterator {
 }
 
 pub const CountMessagesError = error{
+    /// Syntax error in the query (returned for s-expression queries, whose
+    /// parsing is deferred until the query runs).
+    BadQuerySyntax,
     /// A Xapian exception occurred.
     XapianException,
     /// libnotmuch returned an undocumented status code.
@@ -180,12 +183,16 @@ pub fn countMessages(self: *const Query) CountMessagesError!u32 {
     var count: c_uint = undefined;
     return switch (status(c.notmuch_query_count_messages(self.query, &count))) {
         .success => @intCast(count),
+        .bad_query_syntax => error.BadQuerySyntax,
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
 }
 
 pub const CountThreadsError = error{
+    /// Syntax error in the query (returned for s-expression queries, whose
+    /// parsing is deferred until the query runs).
+    BadQuerySyntax,
     /// Memory allocation failed.
     OutOfMemory,
     /// A Xapian exception occurred.
@@ -207,6 +214,7 @@ pub fn countThreads(self: *const Query) CountThreadsError!u32 {
     var count: c_uint = undefined;
     return switch (status(c.notmuch_query_count_threads(self.query, &count))) {
         .success => @intCast(count),
+        .bad_query_syntax => error.BadQuerySyntax,
         .out_of_memory => error.OutOfMemory,
         .xapian_exception => error.XapianException,
         else => error.Unexpected,

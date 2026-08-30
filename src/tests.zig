@@ -432,6 +432,40 @@ test "Query tag exclusion error paths" {
     try query.addTagExclude("other");
 }
 
+test "Query search error paths" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Xapian-syntax queries are lenient: a malformed string is treated as
+    // literal terms and still searches successfully.
+    const lenient = try db.queryCreate("tag:(unbalanced");
+    defer lenient.deinit();
+    _ = try lenient.countMessages();
+
+    // S-expression queries defer parsing until the query runs, so a bad
+    // sexp errors at search/count time.
+    const bad = try db.queryCreateWithSyntax("(unbalanced", .sexp);
+    defer bad.deinit();
+    try std.testing.expectError(error.BadQuerySyntax, bad.countMessages());
+    try std.testing.expectError(error.BadQuerySyntax, bad.countThreads());
+    try std.testing.expectError(error.BadQuerySyntax, bad.searchMessages());
+    try std.testing.expectError(error.BadQuerySyntax, bad.searchThreads());
+}
+
+test "Query searches on a closed database" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    try test_db.database.close();
+
+    try std.testing.expectError(error.XapianException, query.countMessages());
+    try std.testing.expectError(error.XapianException, query.searchMessages());
+    try std.testing.expectError(error.XapianException, query.searchThreads());
+}
+
 test "Message identity, headers, and dates" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
