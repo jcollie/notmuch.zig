@@ -530,6 +530,29 @@ pub fn upgrade(self: *const Database, progress_cb: ?ProgressCallback, closure: ?
     try wrap(c.notmuch_database_upgrade(self.database, progress_cb, closure));
 }
 
+test upgrade {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A freshly created database is already at the newest format version, so
+    // upgrading is a harmless no-op.
+    try std.testing.expect(!db.needsUpgrade());
+    try db.upgrade(null, null);
+
+    // A progress callback (with an optional closure) reports progress
+    // during real upgrades.
+    const callbacks = struct {
+        fn progress(closure: ?*anyopaque, p: f64) callconv(.c) void {
+            _ = closure;
+            _ = p;
+        }
+    };
+    try db.upgrade(callbacks.progress, null);
+}
+
 /// Begin an atomic database operation.
 ///
 /// Any modifications performed between a successful `beginAtomic` and a
