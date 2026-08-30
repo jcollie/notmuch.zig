@@ -37,7 +37,7 @@ const wrap = @import("error.zig").wrap;
 /// called with diagnostic and informational messages. The argument `closure` is
 /// passed verbatim to any callback invoked.
 pub fn compact(path: [:0]const u8, backup_path: [:0]const u8, status_cb: ?Database.StatusCallback, closure: ?*anyopaque) Error!void {
-    try wrap(c.notmuch_database_compact_db(path, backup_path, status_cb, closure));
+    try wrap(c.notmuch_database_compact(path, backup_path, status_cb, closure));
 }
 
 /// Interrogate the library for compile time features.

@@ -31,7 +31,7 @@ const wrapMessage = @import("error.zig").wrapMessage;
 
 /// A callback invoked by `compact` to notify the user of the progress of the
 /// compaction process.
-pub const StatusCallback = fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
+pub const StatusCallback = *const fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
 
 database: *c.notmuch_database_t,
 
@@ -371,7 +371,7 @@ pub fn needsUpgrade(self: *const Database) bool {
 
 /// Callback function that provides progress notification during a database
 /// upgrade operation.
-pub const ProgressCallback = fn (closure: ?*anyopaque, progress: f64) callconv(.c) void;
+pub const ProgressCallback = *const fn (closure: ?*anyopaque, progress: f64) callconv(.c) void;
 
 /// Upgrade the current database to the latest supported version.
 ///
@@ -412,7 +412,7 @@ pub fn beginAtomic(self: *const Database) error{XapianException}!void {
 /// `beginAtomic`) "database.autocommit" times, commit the the transaction and
 /// all previous (non-cancelled) transactions to the database.
 pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException }!void {
-    switch (status(c.notmuch_database_begin_atomic(self.database))) {
+    switch (status(c.notmuch_database_end_atomic(self.database))) {
         .success => {},
         .unbalanced_atomic => return error.UnbalancedAtomic,
         .xapian_exception => return error.XapianException,

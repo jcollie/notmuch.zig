@@ -238,7 +238,7 @@ pub const RemoveTagError = error{
 
 /// Remove a tag from the given message.
 pub fn removeTag(self: *const Message, tag: [:0]const u8) RemoveTagError!void {
-    return switch (status(c.notmuch_message_add_tag(self.message, tag))) {
+    return switch (status(c.notmuch_message_remove_tag(self.message, tag))) {
         .success => {},
         .null_pointer => unreachable,
         .tag_too_long => error.TagTooLong,

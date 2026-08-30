@@ -75,7 +75,7 @@ pub const GetChildDirectoriesError = error{
 /// paths).
 pub fn getChildDirectories(self: *const Directory) GetChildDirectoriesError!FilenamesIterator {
     return .{
-        .filenames = c.notmuch_directory_get_child_files(self.directory) orelse return error.XapianException,
+        .filenames = c.notmuch_directory_get_child_directories(self.directory) orelse return error.XapianException,
     };
 }
 
