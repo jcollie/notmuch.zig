@@ -43,57 +43,57 @@ pub const StatusCallback = *const fn (message: [*c]const u8, closure: ?*anyopaqu
 database: *c.notmuch_database_t,
 
 pub const OpenCreateOptions = struct {
-    /// Path to config file.
+    /// Path to the configuration file.
     ///
-    /// Config file is key-value, with mandatory sections. See
-    /// **notmuch-config(5)** for more information. The key-value pair
-    /// overrides the corresponding configuration data stored in the
-    /// database (see <em>notmuch_database_get_config</em>)
+    /// The configuration file is key-value, with mandatory sections; see
+    /// **notmuch-config(5)** for more information. Its key-value pairs
+    /// override the corresponding configuration data stored in the database
+    /// (see `Database.configGet`).
     ///
-    /// If `config_path` is `null` use the path specified
+    /// If `config_path` is `null`, use the path specified
     ///
-    /// - in environment variable `NOTMUCH_CONFIG`, if non-empty
+    /// - in the environment variable `NOTMUCH_CONFIG`, if non-empty
     ///
-    /// - by  `XDG_CONFIG_HOME`/notmuch/ where
-    ///   `XDG_CONFIG_HOME` defaults to `$HOME/.config`.
+    /// - by `$XDG_CONFIG_HOME/notmuch/` where `XDG_CONFIG_HOME` defaults to
+    ///   `$HOME/.config`
     ///
     /// - by `$HOME/.notmuch-config`
     ///
-    /// If `config_path` is "" (empty string) then do not
-    /// open any configuration file.
+    /// If `config_path` is `""` (the empty string), do not open any
+    /// configuration file.
     config_path: ?[:0]const u8 = null,
-    /// Path to existing database.
+    /// Path to the database.
     ///
     /// A notmuch database is a Xapian database containing appropriate
-    /// metadata.
+    /// metadata. For `open`, this is the path of an existing database,
+    /// created at some time in the past (not necessarily by this process)
+    /// with `Database.create`. For `create`, it is the path at which the new
+    /// database will be created; creation fails with `error.DatabaseExists`
+    /// if a database already exists there.
     ///
-    /// The database should have been created at some time in the past,
-    /// (not necessarily by this process), by calling
-    /// notmuch_database_create.
+    /// If `database_path` is `null`, use the location specified
     ///
-    /// If 'database_path' is NULL, use the location specified
+    /// - in the environment variable `NOTMUCH_DATABASE`, if non-empty
     ///
-    /// - in the environment variable NOTMUCH_DATABASE, if non-empty
+    /// - in a configuration file, located as described under `config_path`
     ///
-    /// - in a configuration file, located as described under 'config_path'
+    /// - by `$XDG_DATA_HOME/notmuch/$PROFILE` where `XDG_DATA_HOME` defaults
+    ///   to `$HOME/.local/share` and `PROFILE` is as discussed in `profile`
     ///
-    /// - by $XDG_DATA_HOME/notmuch/$PROFILE where XDG_DATA_HOME defaults
-    ///   to "$HOME/.local/share" and PROFILE as as discussed in
-    ///   'profile'
-    ///
-    /// If 'database_path' is non-NULL, but does not appear to be a Xapian
-    /// database, check for a directory '.notmuch/xapian' below
-    /// 'database_path' (this is the behavior of
-    /// notmuch_database_open_verbose pre-0.32).
-    database_path: ?[*:0]const u8 = null,
+    /// When opening, if `database_path` is non-`null` but does not appear to
+    /// be a Xapian database, a directory `.notmuch/xapian` below
+    /// `database_path` is checked as well (this is the behavior of
+    /// `notmuch_database_open_verbose` pre-0.32).
+    database_path: ?[:0]const u8 = null,
     /// Name of profile (configuration/database variant).
     ///
     /// If non-`null`, append to the directory / file path determined for
-    /// <em>config_path</em> and <em>database_path</em>.
+    /// `config_path` and `database_path`.
     ///
     /// If `null` then use
-    /// - environment variable `NOTMUCH_PROFILE` if defined,
-    /// - otherwise `"default"` for directories and `""` (empty string) for paths.
+    /// - the environment variable `NOTMUCH_PROFILE` if defined,
+    /// - otherwise `"default"` for directories and `""` (the empty string)
+    ///   for paths.
     profile: ?[:0]const u8 = null,
 };
 

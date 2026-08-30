@@ -39,7 +39,7 @@ test "Database.open on an existing database" {
     try test_db.database.close();
 
     const ro = switch (notmuch.Database.open(.read_only, .{
-        .database_path = path.ptr,
+        .database_path = path,
         .config_path = "",
     })) {
         .ok => |db| db,
