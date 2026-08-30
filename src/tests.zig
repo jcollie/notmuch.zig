@@ -67,6 +67,18 @@ test "Database path, version, and upgrade status" {
     try db.upgrade(null, null);
 }
 
+test "Database.getVersion" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const version = try test_db.database.getVersion();
+    try std.testing.expect(version > 0);
+
+    // A closed database has no determinable version.
+    try test_db.database.close();
+    try std.testing.expectError(error.FormatVersionError, test_db.database.getVersion());
+}
+
 test "Database revisions increase with commits" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
