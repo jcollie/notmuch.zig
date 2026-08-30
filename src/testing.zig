@@ -22,12 +22,44 @@ pub fn hasTag(tags: *TagsIterator, name: []const u8) bool {
     return false;
 }
 
+test hasTag {
+    var test_db = try corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("inbox");
+
+    // hasTag consumes (and deinitializes) the iterator, so fetch a fresh
+    // one for each check.
+    var tags = message.getTags();
+    try std.testing.expect(hasTag(&tags, "inbox"));
+    tags = message.getTags();
+    try std.testing.expect(!hasTag(&tags, "archive"));
+}
+
 /// Consume a tags iterator and count its entries.
 pub fn countTags(tags: *TagsIterator) usize {
     defer tags.deinit();
     var n: usize = 0;
     while (tags.next()) |_| n += 1;
     return n;
+}
+
+test countTags {
+    var test_db = try corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    var tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 0), countTags(&tags));
+
+    try message.addTag("alpha");
+    try message.addTag("beta");
+    tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 2), countTags(&tags));
 }
 
 pub const CorpusMessage = struct {
@@ -42,6 +74,16 @@ pub const corpus = [_]CorpusMessage{
     .{ .filename = "three.eml", .data = @embedFile("testdata/three.eml") },
     .{ .filename = "four.eml", .data = @embedFile("testdata/four.eml") },
 };
+
+test corpus {
+    // Each corpus entry is a complete RFC 5322 message with a stable
+    // Message-ID, so tests can look messages up by ID.
+    try std.testing.expectEqual(@as(usize, 4), corpus.len);
+    for (corpus) |message| {
+        try std.testing.expect(std.mem.indexOf(u8, message.data, "Message-ID: <") != null);
+        try std.testing.expect(std.mem.endsWith(u8, message.filename, ".eml"));
+    }
+}
 
 pub const TestDatabase = struct {
     tmp: std.testing.TmpDir,
