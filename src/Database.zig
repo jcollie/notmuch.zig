@@ -821,6 +821,10 @@ pub const ReopenError = error{
 };
 
 /// Reopen an open notmuch database.
+///
+/// Reopening switches the database to `mode` and picks up changes committed
+/// by other connections since it was opened. It also brings a database
+/// closed with `close` back into a usable state.
 pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
     return switch (status(c.notmuch_database_reopen(self.database, @intFromEnum(mode)))) {
         .success => {},

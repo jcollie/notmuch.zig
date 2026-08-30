@@ -366,6 +366,79 @@ test "Database.indexFileGetMessage and reopen" {
     try std.testing.expectEqual(@as(u32, fixture.corpus.len + 1), try query.countMessages());
 }
 
+test "Database.reopen switches modes" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    // After reopening read-only, writes fail.
+    try test_db.database.reopen(.read_only);
+    const ro_message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer ro_message.deinit();
+    try std.testing.expectError(error.ReadOnlyDatabase, ro_message.addTag("nope"));
+
+    // After reopening read-write, writes succeed again.
+    try test_db.database.reopen(.read_write);
+    const rw_message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer rw_message.deinit();
+    try rw_message.addTag("reopened");
+    var tags = rw_message.getTags();
+    try std.testing.expect(hasTag(&tags, "reopened"));
+}
+
+test "Database.reopen picks up committed changes" {
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const path = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    defer alloc.free(path);
+
+    // A second, read-only connection to the same database.
+    var reader = switch (notmuch.Database.open(.read_only, .{
+        .database_path = path,
+        .config_path = "",
+    })) {
+        .ok => |db| db,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer reader.deinit() catch {};
+
+    {
+        const query = try reader.queryCreate("tag:fresh");
+        defer query.deinit();
+        try std.testing.expectEqual(@as(u32, 0), try query.countMessages());
+    }
+
+    // The writer tags a message and commits by closing.
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("fresh");
+    try test_db.database.close();
+
+    // The reader sees the change only after reopening.
+    try reader.reopen(.read_only);
+    const query = try reader.queryCreate("tag:fresh");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, 1), try query.countMessages());
+}
+
+test "Database.reopen revives a closed database" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    try test_db.database.close();
+    try std.testing.expectError(error.XapianException, test_db.database.findMessage("one@example.org"));
+
+    // reopen brings a closed database back into a usable state.
+    try test_db.database.reopen(.read_only);
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try std.testing.expectEqualStrings("one@example.org", message.getMessageID() orelse "");
+}
+
 test "IndexOpts decrypt policy" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
