@@ -1087,6 +1087,60 @@ test "writes to a read-only database return errors" {
     try std.testing.expectError(error.ReadOnlyDatabase, message.removeAllProperties(null));
 }
 
+test "helpers.MessageWriter atomicity and delivery" {
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+    var buffer: [256]u8 = undefined;
+
+    // A cancelled message leaves nothing behind at its destination.
+    var cancelled = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
+    try cancelled.writer().writeAll("From: partial <partial@example.org>\n");
+    var cancelled_path_buf: [128]u8 = undefined;
+    const cancelled_path = try std.fmt.bufPrint(&cancelled_path_buf, "mail/new/{s}", .{cancelled.filename()});
+    cancelled.cancel();
+    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, cancelled_path, .{}));
+
+    // A finished message is materialized in new/ and indexed. The generated
+    // name leads with the delivery timestamp so filenames sort by arrival.
+    var finished = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
+    try std.testing.expect(std.ascii.isDigit(finished.filename()[0]));
+    try std.testing.expect(std.mem.indexOf(u8, finished.filename(), ".M") != null);
+    try finished.writer().writeAll(
+        \\From: Grace <grace@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: Atomic delivery
+        \\Date: Sat, 06 Apr 2024 09:00:00 +0000
+        \\Message-ID: <seven@example.org>
+        \\
+        \\Materialized atomically.
+        \\
+    );
+    const message = try finished.finish(null);
+    defer message.deinit();
+    try std.testing.expectEqualStrings("seven@example.org", message.getMessageID() orelse "");
+    try std.testing.expect(std.mem.indexOf(u8, try message.getFilename(), "/new/") != null);
+
+    // Delivery into cur/ carries an empty maildir info suffix.
+    var seen = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .subdir = .cur });
+    try seen.writer().writeAll(
+        \\From: Heidi <heidi@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: Already seen
+        \\Date: Sat, 06 Apr 2024 10:00:00 +0000
+        \\Message-ID: <eight@example.org>
+        \\
+        \\Delivered as seen mail.
+        \\
+    );
+    const seen_message = try seen.finish(null);
+    defer seen_message.deinit();
+    const seen_filename = try seen_message.getFilename();
+    try std.testing.expect(std.mem.indexOf(u8, seen_filename, "/cur/") != null);
+    try std.testing.expect(std.mem.endsWith(u8, seen_filename, ":2,"));
+}
+
 test "module helpers" {
     try std.testing.expect(notmuch.builtWith("compact"));
     try std.testing.expect(!notmuch.builtWith("time-travel"));

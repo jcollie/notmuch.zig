@@ -124,6 +124,13 @@ test "every wrapper body compiles" {
     _ = indexopts.getDecryptPolicy();
     indexopts.deinit();
 
+    var message_writer: notmuch.helpers.MessageWriter = undefined;
+    message_writer = try notmuch.helpers.MessageWriter.init(undefined, db, &.{}, .{});
+    _ = message_writer.writer();
+    _ = message_writer.filename();
+    _ = try message_writer.finish(null);
+    message_writer.cancel();
+
     const messages: notmuch.MessagesIterator = undefined;
     _ = messages.collectTags();
     _ = try messages.next();

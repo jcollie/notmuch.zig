@@ -9,6 +9,8 @@
 const std = @import("std");
 
 const Database = @import("Database.zig");
+const helpers = @import("helpers.zig");
+const Message = @import("Message.zig");
 
 pub const CorpusMessage = struct {
     filename: []const u8,
@@ -30,6 +32,47 @@ pub const TestDatabase = struct {
     pub fn deinit(self: *TestDatabase) void {
         self.database.deinit() catch {};
         self.tmp.cleanup();
+    }
+
+    /// Begin streaming a new message into the maildir using
+    /// `helpers.MessageWriter`, with the write buffer managed by the test
+    /// allocator. Compose the email through `TestMessageWriter.writer`, then
+    /// call `TestMessageWriter.finish` to index it.
+    pub fn newMessage(self: *TestDatabase, options: helpers.Options) !TestMessageWriter {
+        const alloc = std.testing.allocator;
+
+        const buffer = try alloc.alloc(u8, 4096);
+        errdefer alloc.free(buffer);
+
+        return .{
+            .inner = try helpers.MessageWriter.init(std.testing.io, self.database, buffer, options),
+            .buffer = buffer,
+        };
+    }
+};
+
+/// An email being streamed into the test database. Obtained from
+/// `TestDatabase.newMessage`; wraps `helpers.MessageWriter` and owns its
+/// write buffer.
+pub const TestMessageWriter = struct {
+    inner: helpers.MessageWriter,
+    buffer: []u8,
+
+    /// The `std.Io.Writer` to compose the email into.
+    pub fn writer(self: *TestMessageWriter) *std.Io.Writer {
+        return self.inner.writer();
+    }
+
+    /// Flush and close the message file, index it into the database, and
+    /// return the indexed message. Frees the helper's resources; the caller
+    /// owns the returned message.
+    pub fn finish(self: *TestMessageWriter) !Message {
+        const alloc = std.testing.allocator;
+        defer {
+            alloc.free(self.buffer);
+            self.* = undefined;
+        }
+        return self.inner.finish(null);
     }
 };
 
@@ -105,6 +148,32 @@ pub fn corpusDatabase() !TestDatabase {
     }
 
     return .{ .tmp = tmp, .database = database };
+}
+
+test TestMessageWriter {
+    var test_db = try corpusDatabase();
+    defer test_db.deinit();
+
+    var message_writer = try test_db.newMessage(.{});
+    const w = message_writer.writer();
+    try w.print(
+        \\From: Frank <frank@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: {s}
+        \\Date: Fri, 05 Apr 2024 12:00:00 +0000
+        \\Message-ID: <six@example.org>
+        \\
+        \\Written through a std.Io.Writer.
+        \\
+    , .{"Streamed message"});
+
+    const message = try message_writer.finish();
+    defer message.deinit();
+    try std.testing.expectEqualStrings("six@example.org", message.getMessageID() orelse "");
+
+    const query = try test_db.database.queryCreate("subject:streamed");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, 1), try query.countMessages());
 }
 
 test corpusDatabase {

@@ -24,6 +24,7 @@ pub const Database = @import("Database.zig");
 pub const Directory = @import("Directory.zig");
 pub const Error = @import("error.zig").Error;
 pub const FilenamesIterator = @import("FilenamesIterator.zig");
+pub const helpers = @import("helpers.zig");
 pub const IndexOpts = @import("IndexOpts.zig");
 pub const Message = @import("Message.zig");
 pub const MessagesIterator = @import("MessagesIterator.zig");

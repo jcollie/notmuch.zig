@@ -150,6 +150,7 @@ release memory sooner than the enclosing query would.
 | `notmuch.TagsIterator`, `notmuch.PropertiesIterator`, `notmuch.PairsIterator`, `notmuch.ValuesIterator` | iteration over tags, message properties, and configuration data |
 | `notmuch.Error` | the full set of `notmuch_status_t` codes as Zig errors, plus `error.Unexpected` for status codes a function is not documented to return |
 | `notmuch.compact`, `notmuch.builtWith`, `notmuch.tag_max` | module-level helpers |
+| `notmuch.helpers.MessageWriter` | streaming an email through a `std.Io.Writer` into the mail store and indexing it (a convenience unique to these bindings) |
 
 Full API documentation is generated from the source and published at
 <https://notmuch-zig.ocjtech.us>. To read it locally instead:
