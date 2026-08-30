@@ -18,6 +18,8 @@ pub const NextError = error{
     /// Iteration was invalidated by the database. Re-open the database and
     /// try again.
     OperationInvalidated,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 pub fn next(self: *ThreadsIterator) NextError!?Thread {
@@ -33,7 +35,7 @@ pub fn next(self: *ThreadsIterator) NextError!?Thread {
         .iterator_exhausted => return null,
         .operation_invalidated => error.OperationInvalidated,
         .out_of_memory => error.OutOfMemory,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 

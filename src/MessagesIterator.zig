@@ -19,6 +19,8 @@ pub const NextError = error{
     /// Iteration was invalidated by the database. Re-open the database and
     /// try again.
     OperationInvalidated,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Return a list of tags from all messages.
@@ -51,7 +53,7 @@ pub fn next(self: *const MessagesIterator) NextError!?Message {
         .iterator_exhausted => return null,
         .operation_invalidated => error.OperationInvalidated,
         .out_of_memory => error.OutOfMemory,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 

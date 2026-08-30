@@ -522,6 +522,52 @@ test "Thread and MessagesIterator tag collection" {
     try std.testing.expect(hasTag(&collected, "blue"));
 }
 
+test "Database.open error reporting" {
+    const missing = notmuch.Database.open(.read_only, .{
+        .database_path = "/nonexistent/notmuch-zig-test",
+        .config_path = "",
+    });
+    switch (missing) {
+        .ok => |db| {
+            db.deinit() catch {};
+            return error.TestUnexpectedResult;
+        },
+        .err => |e| {
+            defer e.deinit();
+            try std.testing.expectEqual(notmuch.Database.OpenError.NoDatabase, e.err);
+        },
+    }
+
+    const relative = notmuch.Database.open(.read_only, .{
+        .database_path = "relative/path",
+        .config_path = "",
+    });
+    switch (relative) {
+        .ok => |db| {
+            db.deinit() catch {};
+            return error.TestUnexpectedResult;
+        },
+        .err => |e| {
+            defer e.deinit();
+            try std.testing.expectEqual(notmuch.Database.OpenError.PathError, e.err);
+        },
+    }
+}
+
+test "writes to a read-only database return errors" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    try test_db.database.reopen(.read_only);
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try std.testing.expectError(error.ReadOnlyDatabase, message.addTag("probe"));
+    try std.testing.expectError(error.ReadOnlyDatabase, message.addProperty("probe.key", "value"));
+    try std.testing.expectError(error.ReadOnlyDatabase, message.removeProperty("probe.key", "value"));
+    try std.testing.expectError(error.ReadOnlyDatabase, message.removeAllProperties(null));
+}
+
 test "module helpers" {
     try std.testing.expect(notmuch.builtWith("compact"));
     try std.testing.expect(!notmuch.builtWith("time-travel"));

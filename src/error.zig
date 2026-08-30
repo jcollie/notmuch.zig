@@ -72,6 +72,10 @@ pub const Error = error{
     /// The notmuch_message_thaw function has been called more times than
     /// notmuch_message_freeze.
     UnbalancedFreezeThaw,
+    /// libnotmuch returned a status code that is not documented for this
+    /// operation. This can happen when a newer libnotmuch adds return values,
+    /// or when an operation is attempted on a closed database.
+    Unexpected,
     /// A MIME object claimed to have cryptographic protection, and notmuch
     /// attempted to process it, but the specific protocol was something that
     /// notmuch doesn't know how to handle.

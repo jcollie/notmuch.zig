@@ -139,12 +139,14 @@ pub fn reindex(self: *const Message, indexopts: ?IndexOpts) Error!void {
         .file_not_email => error.FileNotEmail,
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
 pub const GetFlagError = error{
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Get a value of a flag for the email corresponding to `Message`.
@@ -158,7 +160,7 @@ pub fn getFlag(self: *const Message, flag: MessageFlag) GetFlagError!bool {
         .success => is_set != 0,
         .null_pointer => unreachable,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -216,6 +218,8 @@ pub const AddTagError = error{
     TagTooLong,
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Add a tag to the given message.
@@ -225,7 +229,7 @@ pub fn addTag(self: *const Message, tag: [:0]const u8) AddTagError!void {
         .null_pointer => unreachable,
         .tag_too_long => error.TagTooLong,
         .read_only_database => error.ReadOnlyDatabase,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -234,6 +238,8 @@ pub const RemoveTagError = error{
     TagTooLong,
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove a tag from the given message.
@@ -243,7 +249,7 @@ pub fn removeTag(self: *const Message, tag: [:0]const u8) RemoveTagError!void {
         .null_pointer => unreachable,
         .tag_too_long => error.TagTooLong,
         .read_only_database => error.ReadOnlyDatabase,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -251,6 +257,8 @@ pub const RemoveAllTagsError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove all tags from the given message.
@@ -261,7 +269,7 @@ pub fn removeAllTags(self: *const Message) RemoveAllTagsError!void {
         .success => {},
         .read_only_database => error.ReadOnlyDatabase,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -299,6 +307,8 @@ pub fn maildirFlagsToTags(self: *const Message) Error!void {
 
 pub const HasMaildirFlagError = error{
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Check message for maildir flag.
@@ -308,7 +318,7 @@ pub fn hasMaildirFlag(self: *const Message, flag: MaildirFlag) HasMaildirFlagErr
         .success => is_set != 0,
         .null_pointer => unreachable,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -412,13 +422,17 @@ pub fn getProperty(self: *const Message, key: [:0]const u8) ?[:0]const u8 {
     return switch (status(c.notmuch_message_get_property(self.message, key, &value))) {
         .success => std.mem.span(value orelse return null),
         .null_pointer => unreachable,
-        else => unreachable,
+        else => null,
     };
 }
 
 pub const AddPropertyError = error{
     /// `key` may not contain an '=' character.
     IllegalArgument,
+    /// Database was opened in read-only mode so message cannot be modified.
+    ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Add a (key,value) pair to a message.
@@ -427,13 +441,18 @@ pub fn addProperty(self: *const Message, key: [:0]const u8, value: [:0]const u8)
         .success => {},
         .null_pointer => unreachable,
         .illegal_argument => return error.IllegalArgument,
-        else => unreachable,
+        .read_only_database => return error.ReadOnlyDatabase,
+        else => error.Unexpected,
     };
 }
 
 pub const RemovePropertyError = error{
     /// `key` may not contain an '=' character.
     IllegalArgument,
+    /// Database was opened in read-only mode so message cannot be modified.
+    ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove a (key,value) pair from a message.
@@ -444,13 +463,16 @@ pub fn removeProperty(self: *const Message, key: [:0]const u8, value: [:0]const 
         .success => {},
         .null_pointer => unreachable,
         .illegal_argument => error.IllegalArgument,
-        else => unreachable,
+        .read_only_database => error.ReadOnlyDatabase,
+        else => error.Unexpected,
     };
 }
 
 pub const RemoveAllPropertiesError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove all (key,value) pairs from the given message.
@@ -463,13 +485,15 @@ pub fn removeAllProperties(
     return switch (status(c.notmuch_message_remove_all_properties(self.message, key orelse null))) {
         .success => {},
         .read_only_database => error.ReadOnlyDatabase,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
 pub const RemoveAllPropertiesWithPrefixError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove all (prefix*,value) pairs from the given message
@@ -482,7 +506,7 @@ pub fn removeAllPropertiesWithPrefix(
     return switch (status(c.notmuch_message_remove_all_properties_with_prefix(self.message, prefix orelse null))) {
         .success => {},
         .read_only_database => error.ReadOnlyDatabase,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 

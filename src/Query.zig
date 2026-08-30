@@ -77,6 +77,8 @@ pub const AddTagExcludeError = error{
     /// A Xapian exception occurred. Most likely a problem lazily parsing the
     /// query string.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Add a tag that will be excluded from the query results by default. This
@@ -86,7 +88,7 @@ pub fn addTagExclude(self: *const Query, tag: [:0]const u8) AddTagExcludeError!v
         .success => {},
         .ignored => error.Ignored,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -157,8 +159,10 @@ pub fn searchMessages(self: *const Query) Error!MessagesIterator {
 }
 
 pub const CountMessagesError = error{
-    /// A Xapian error occurred.
-    XapianError,
+    /// A Xapian exception occurred.
+    XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Return the number of messages matching a search.
@@ -169,16 +173,18 @@ pub fn countMessages(self: *const Query) CountMessagesError!u32 {
     var count: c_uint = undefined;
     return switch (status(c.notmuch_query_count_messages(self.query, &count))) {
         .success => @intCast(count),
-        .xapian_exception => error.XapianError,
-        else => unreachable,
+        .xapian_exception => error.XapianException,
+        else => error.Unexpected,
     };
 }
 
 pub const CountThreadsError = error{
     /// Memory allocation failed.
     OutOfMemory,
-    /// A Xapian error occurred.
-    XapianError,
+    /// A Xapian exception occurred.
+    XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Return the number of threads matching a search.
@@ -195,8 +201,8 @@ pub fn countThreads(self: *const Query) CountThreadsError!u32 {
     return switch (status(c.notmuch_query_count_threads(self.query, &count))) {
         .success => @intCast(count),
         .out_of_memory => error.OutOfMemory,
-        .xapian_exception => error.XapianError,
-        else => unreachable,
+        .xapian_exception => error.XapianException,
+        else => error.Unexpected,
     };
 }
 

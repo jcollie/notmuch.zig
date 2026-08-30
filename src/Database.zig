@@ -93,10 +93,13 @@ pub const OpenCreateOptions = struct {
 pub const OpenError = error{
     NullPointer,
     NoConfig,
+    NoDatabase,
     NotmuchVersion,
     OutOfMemory,
     FileError,
+    PathError,
     XapianException,
+    Unexpected,
 };
 
 pub const OpenResult = union(enum) {
@@ -148,10 +151,12 @@ pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
         },
         .file_error => error.FileError,
         .no_config => error.NoConfig,
+        .no_database => error.NoDatabase,
         .null_pointer => error.NullPointer,
         .out_of_memory => error.OutOfMemory,
+        .path_error => error.PathError,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 
     return .{
@@ -169,6 +174,7 @@ pub const CreateError = error{
     NotmuchVersion,
     OutOfMemory,
     XapianException,
+    Unexpected,
 };
 
 pub const CreateResult = union(enum) {
@@ -221,10 +227,7 @@ pub fn create(options: OpenCreateOptions) CreateResult {
         .no_config => error.NoConfig,
         .out_of_memory => error.OutOfMemory,
         .xapian_exception => error.XapianException,
-        else => |v| {
-            std.debug.print("{t}\n", .{v});
-            unreachable;
-        },
+        else => error.Unexpected,
     };
 
     return .{
@@ -290,7 +293,7 @@ test create {
     try std.testing.expect(r == .ok);
 }
 
-pub const CloseError = error{XapianException};
+pub const CloseError = error{ XapianException, Unexpected };
 
 /// Commit changes and close the given notmuch database.
 ///
@@ -311,7 +314,7 @@ pub fn close(self: *const Database) CloseError!void {
     switch (status(c.notmuch_database_close(self.database))) {
         .success => {},
         .xapian_exception => return error.XapianException,
-        else => unreachable,
+        else => return error.Unexpected,
     }
 }
 /// Compact the notmuch database, backing up the original database to the given
@@ -337,7 +340,7 @@ pub fn deinit(self: *const Database) Error!void {
     switch (status(c.notmuch_database_destroy(self.database))) {
         .success => {},
         .xapian_exception => return error.XapianException,
-        else => unreachable,
+        else => return error.Unexpected,
     }
 }
 
@@ -400,23 +403,23 @@ pub fn upgrade(self: *const Database, progress_cb: ?ProgressCallback, closure: ?
 ///
 /// Atomic sections may be nested. `beginAtomic` and `endAtomic` must always be
 /// called in pairs.
-pub fn beginAtomic(self: *const Database) error{XapianException}!void {
+pub fn beginAtomic(self: *const Database) error{ XapianException, Unexpected }!void {
     switch (status(c.notmuch_database_begin_atomic(self.database))) {
         .success => {},
         .xapian_exception => return error.XapianException,
-        else => unreachable,
+        else => return error.Unexpected,
     }
 }
 
 /// Indicate the end of an atomic database operation. If repeated (with matching
 /// `beginAtomic`) "database.autocommit" times, commit the the transaction and
 /// all previous (non-cancelled) transactions to the database.
-pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException }!void {
+pub fn endAtomic(self: *const Database) error{ UnbalancedAtomic, XapianException, Unexpected }!void {
     switch (status(c.notmuch_database_end_atomic(self.database))) {
         .success => {},
         .unbalanced_atomic => return error.UnbalancedAtomic,
         .xapian_exception => return error.XapianException,
-        else => unreachable,
+        else => return error.Unexpected,
     }
 }
 
@@ -484,7 +487,7 @@ pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!?Directory 
         .null_pointer => error.NullPointer,
         .upgrade_required => error.UpgradeRequired,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -499,6 +502,8 @@ pub const IndexFileError = error{
     ReadOnlyDatabase,
     /// The caller must upgrade the database to use this function.
     UpgradeRequired,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Add a message file to a database, indexing it for retrieval by future
@@ -542,7 +547,7 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
         .file_not_email => error.FileNotEmail,
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -598,7 +603,7 @@ pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexo
         .file_not_email => error.FileNotEmail,
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -612,6 +617,8 @@ pub const RemoveMessageError = error{
     UpgradeRequired,
     /// A Xapian exception occurred, message not removed.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Remove a message filename from the given notmuch database. If the message
@@ -628,7 +635,7 @@ pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessag
         .read_only_database => error.ReadOnlyDatabase,
         .upgrade_required => error.UpgradeRequired,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -637,6 +644,8 @@ pub const FindMessageError = error{
     OutOfMemory,
     /// A Xapian exception occurred.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Find a message with the given message ID.
@@ -656,7 +665,7 @@ pub fn findMessage(self: *const Database, message_id: [:0]const u8) FindMessageE
         .null_pointer => unreachable,
         .out_of_memory => error.OutOfMemory,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 /// Find a message with the given filename.
@@ -676,7 +685,7 @@ pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) Find
         .null_pointer => unreachable,
         .out_of_memory => error.OutOfMemory,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
@@ -697,6 +706,8 @@ pub const ReopenError = error{
     IllegalArgument,
     /// A Xapian exception occurred.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
 };
 
 /// Reopen an open notmuch database.
@@ -705,7 +716,7 @@ pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
         .success => {},
         .illegal_argument => error.IllegalArgument,
         .xapian_exception => error.XapianException,
-        else => unreachable,
+        else => error.Unexpected,
     };
 }
 
