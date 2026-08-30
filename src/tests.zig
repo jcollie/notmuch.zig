@@ -205,18 +205,6 @@ test "Message property error paths" {
     try std.testing.expectError(error.ReadOnlyDatabase, ro_message.removeAllPropertiesWithPrefix("test."));
 }
 
-test "Message flags" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-
-    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
-    defer message.deinit();
-
-    try std.testing.expect(!try message.getFlag(.ghost));
-    message.setFlag(.match, true);
-    try std.testing.expect(try message.getFlag(.match));
-}
-
 test "Message maildir flags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();

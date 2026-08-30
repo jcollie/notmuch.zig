@@ -618,7 +618,6 @@ pub fn compact(self: *const Database, backup_path: [:0]const u8, status_cb: ?Sta
     try wrap(c.notmuch_database_compact_db(self.database, backup_path, status_cb, closure));
 }
 
-
 /// Deinit the notmuch database, closing it if necessary and freeing all
 /// associated resources.
 ///

@@ -43,6 +43,19 @@ pub fn getDatabase(self: *const Message) Database {
     };
 }
 
+test getDatabase {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // The message's owning database is the one it was found in.
+    try std.testing.expectEqual(test_db.database.database, message.getDatabase().database);
+}
+
 /// Get the message ID of `Message`.
 ///
 /// The returned string belongs to `Message` and as such, should not be modified
@@ -52,6 +65,19 @@ pub fn getDatabase(self: *const Message) Database {
 /// This function will return `null` if it triggers an unhandled Xapian exception.
 pub fn getMessageID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_message_id(self.message) orelse return null);
+}
+
+test getMessageID {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // The message ID, without the angle brackets of the Message-ID header.
+    try std.testing.expectEqualStrings("one@example.org", message.getMessageID() orelse "");
 }
 
 /// Get the thread ID of `Message`.
@@ -64,6 +90,24 @@ pub fn getMessageID(self: *const Message) ?[:0]const u8 {
 /// This function will return `null` if it triggers an unhandled Xapian exception.
 pub fn getThreadID(self: *const Message) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_thread_id(self.message) orelse return null);
+}
+
+test getThreadID {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const one = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer one.deinit();
+    const two = try test_db.database.findMessage("two@example.org") orelse return error.TestUnexpectedResult;
+    defer two.deinit();
+
+    // Messages joined by In-Reply-To share a thread ID.
+    try std.testing.expectEqualStrings(
+        one.getThreadID() orelse return error.TestUnexpectedResult,
+        two.getThreadID() orelse return error.TestUnexpectedResult,
+    );
 }
 
 /// Get a `MessagesIterator` for all of the replies to `Message`.
@@ -90,6 +134,33 @@ pub fn getReplies(self: *const Message) MessagesIterator {
     };
 }
 
+test getReplies {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Replies are available for messages obtained through a thread.
+    const query = try db.queryCreate("subject:lunch");
+    defer query.deinit();
+    var threads = try query.searchThreads();
+    defer threads.deinit();
+    const thread = try threads.next() orelse return error.TestUnexpectedResult;
+    defer thread.deinit();
+    var toplevel = thread.getToplevelMessages();
+    const top = try toplevel.next() orelse return error.TestUnexpectedResult;
+    var replies = top.getReplies();
+    const reply = try replies.next() orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("two@example.org", reply.getMessageID() orelse "");
+
+    // For a message from a plain search, the iterator is empty.
+    const searched = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer searched.deinit();
+    var none = searched.getReplies();
+    try std.testing.expectEqual(@as(?Message, null), try none.next());
+}
+
 pub const CountFilesError = error{
     /// An error occurred while trying to count files.
     CountFilesError,
@@ -101,6 +172,19 @@ pub fn countFiles(self: *const Message) CountFilesError!usize {
     const count = c.notmuch_message_count_files(self.message);
     if (count < 0) return error.CountFilesError;
     return @intCast(@max(0, count));
+}
+
+test countFiles {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // Each corpus message is backed by a single file.
+    try std.testing.expectEqual(@as(usize, 1), try message.countFiles());
 }
 
 pub const GetFilenameError = error{
@@ -125,6 +209,20 @@ pub const GetFilenameError = error{
 /// Returns `error.XapianException` if the call triggers a Xapian exception.
 pub fn getFilename(self: *const Message) GetFilenameError![:0]const u8 {
     return std.mem.span(c.notmuch_message_get_filename(self.message) orelse return error.XapianException);
+}
+
+test getFilename {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    const filename = try message.getFilename();
+    try std.testing.expect(std.fs.path.isAbsolute(filename));
+    try std.testing.expectEqualStrings("one.eml", std.fs.path.basename(filename));
 }
 
 pub const GetFilenamesError = error{
@@ -184,6 +282,27 @@ pub fn reindex(self: *const Message, indexopts: ?IndexOpts) Error!void {
     };
 }
 
+test reindex {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    try message.addTag("keep");
+    try message.reindex(null);
+
+    // The pre-reindex object refers to the original message; discard it and
+    // look the message up again.
+    message.deinit();
+    const fresh = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer fresh.deinit();
+    try std.testing.expectEqualStrings("Lunch plans", fresh.getHeader("Subject") orelse "");
+    var tags = fresh.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "keep"));
+}
+
 pub const GetFlagError = error{
     /// A Xapian exception occurred.
     XapianException,
@@ -206,6 +325,23 @@ pub fn getFlag(self: *const Message, flag: MessageFlag) GetFlagError!bool {
     };
 }
 
+test getFlag {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // An ordinary message is not a ghost.
+    try std.testing.expect(!try message.getFlag(.ghost));
+
+    // Flags set with setFlag are read back.
+    message.setFlag(.match, true);
+    try std.testing.expect(try message.getFlag(.match));
+}
+
 /// Set a value of a flag for the email corresponding to `Message`.
 pub fn setFlag(self: *const Message, flag: MessageFlag, value: bool) void {
     c.notmuch_message_set_flag(self.message, @intFromEnum(flag), @intFromBool(value));
@@ -223,6 +359,19 @@ pub fn getDate(self: *const Message) ?i64 {
     const time = c.notmuch_message_get_date(self.message);
     if (time == 0) return null;
     return @intCast(time);
+}
+
+test getDate {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // Mon, 01 Apr 2024 09:00:00 +0000, as seconds since the Unix epoch.
+    try std.testing.expectEqual(@as(?i64, 1711962000), message.getDate());
 }
 
 /// Get the value of the specified header from `Message` as a UTF-8 string.
@@ -270,6 +419,24 @@ pub fn getTags(self: *const Message) TagsIterator {
     return .{
         .tags = c.notmuch_message_get_tags(self.message),
     };
+}
+
+test getTags {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // A freshly indexed message carries no tags.
+    var tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 0), fixture.countTags(&tags));
+
+    try message.addTag("inbox");
+    tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "inbox"));
 }
 
 pub const AddTagError = error{
@@ -337,6 +504,24 @@ pub fn removeTag(self: *const Message, tag: [:0]const u8) RemoveTagError!void {
     };
 }
 
+test removeTag {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addTag("spam");
+    try message.removeTag("spam");
+    var tags = message.getTags();
+    try std.testing.expect(!fixture.hasTag(&tags, "spam"));
+
+    // Removing a tag the message does not carry is not an error.
+    try message.removeTag("spam");
+}
+
 pub const RemoveAllTagsError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
@@ -356,6 +541,22 @@ pub fn removeAllTags(self: *const Message) RemoveAllTagsError!void {
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test removeAllTags {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addTag("alpha");
+    try message.addTag("beta");
+    try message.removeAllTags();
+    var tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 0), fixture.countTags(&tags));
 }
 
 /// Add/remove tags according to maildir flags in the message filename(s).
@@ -450,6 +651,21 @@ pub fn hasMaildirFlag(self: *const Message, flag: MaildirFlag) HasMaildirFlagErr
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test hasMaildirFlag {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // The corpus filenames carry no ":2," maildir info part, so no flag is
+    // set.
+    try std.testing.expect(!try message.hasMaildirFlag(.S));
+    try std.testing.expect(!try message.hasMaildirFlag(.F));
 }
 
 /// Rename message filename(s) to encode tags as maildir flags.
@@ -600,6 +816,25 @@ pub fn getProperty(self: *const Message, key: [:0]const u8) ?[:0]const u8 {
     };
 }
 
+test getProperty {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // An absent property reads as null.
+    try std.testing.expectEqual(@as(?[:0]const u8, null), message.getProperty("zig.absent"));
+
+    try message.addProperty("zig.key", "value");
+    try std.testing.expectEqualStrings(
+        "value",
+        message.getProperty("zig.key") orelse return error.TestUnexpectedResult,
+    );
+}
+
 pub const AddPropertyError = error{
     /// `key` may not contain an '=' character.
     IllegalArgument,
@@ -675,6 +910,24 @@ pub fn removeProperty(self: *const Message, key: [:0]const u8, value: [:0]const 
     };
 }
 
+test removeProperty {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addProperty("zig.key", "first");
+    try message.addProperty("zig.key", "second");
+    try message.removeProperty("zig.key", "first");
+    try std.testing.expectEqual(@as(usize, 1), try message.countProperties("zig.key"));
+
+    // Removing a non-existent pair is not an error.
+    try message.removeProperty("zig.key", "first");
+}
+
 pub const RemoveAllPropertiesError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
@@ -694,6 +947,28 @@ pub fn removeAllProperties(
         .read_only_database => error.ReadOnlyDatabase,
         else => error.Unexpected,
     };
+}
+
+test removeAllProperties {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addProperty("zig.a", "1");
+    try message.addProperty("zig.b", "2");
+
+    // With a key, only that key's properties are removed.
+    try message.removeAllProperties("zig.a");
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("zig.a"));
+    try std.testing.expectEqual(@as(usize, 1), try message.countProperties("zig.b"));
+
+    // With null, all properties are removed.
+    try message.removeAllProperties(null);
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("zig.b"));
 }
 
 pub const RemoveAllPropertiesWithPrefixError = error{
@@ -717,6 +992,25 @@ pub fn removeAllPropertiesWithPrefix(
     };
 }
 
+test removeAllPropertiesWithPrefix {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addProperty("zig.a", "1");
+    try message.addProperty("zig.b", "2");
+    try message.addProperty("other.c", "3");
+
+    try message.removeAllPropertiesWithPrefix("zig.");
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("zig.a"));
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("zig.b"));
+    try std.testing.expectEqual(@as(usize, 1), try message.countProperties("other.c"));
+}
+
 /// Get the properties for `Message`, returning a `PropertiesIterator` object
 /// which can be used to iterate over all properties.
 ///
@@ -736,12 +1030,55 @@ pub fn getProperties(
     };
 }
 
+test getProperties {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addProperty("zig.a", "1");
+    try message.addProperty("zig.ab", "2");
+
+    // With exact = true, only the exact key matches.
+    var exact = message.getProperties("zig.a", true);
+    defer exact.deinit();
+    var exact_count: usize = 0;
+    while (exact.next()) |kv| : (exact_count += 1)
+        try std.testing.expectEqualStrings("zig.a", kv.key);
+    try std.testing.expectEqual(@as(usize, 1), exact_count);
+
+    // With exact = false, the key is treated as a prefix.
+    var prefixed = message.getProperties("zig.a", false);
+    defer prefixed.deinit();
+    var prefix_count: usize = 0;
+    while (prefixed.next()) |_| prefix_count += 1;
+    try std.testing.expectEqual(@as(usize, 2), prefix_count);
+}
+
 /// Return the number of properties named "key" belonging to the specific message.
 pub fn countProperties(self: *const Message, key: [:0]const u8) Error!usize {
     std.debug.assert(@typeInfo(c_uint).int.bits <= @typeInfo(usize).int.bits);
     var count: c_uint = undefined;
     try wrap(c.notmuch_message_count_properties(self.message, key, &count));
     return @intCast(count);
+}
+
+test countProperties {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("zig.key"));
+    try message.addProperty("zig.key", "first");
+    try message.addProperty("zig.key", "second");
+    try std.testing.expectEqual(@as(usize, 2), try message.countProperties("zig.key"));
 }
 
 test {
