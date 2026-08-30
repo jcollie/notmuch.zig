@@ -427,6 +427,41 @@ test "Database.configGetPairs" {
     try std.testing.expect(unknown.next() == null);
 }
 
+test "Database.configPath" {
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // The reported path is the config file the database was opened with,
+    // which the fixture places next to the mail root.
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const expected = try std.fs.path.join(alloc, &.{
+        std.fs.path.dirname(root) orelse return error.TestUnexpectedResult,
+        "config",
+    });
+    defer alloc.free(expected);
+    try std.testing.expectEqualStrings(expected, db.configPath() orelse return error.TestUnexpectedResult);
+
+    // A database opened with config_path "" reports the empty string as its
+    // config path rather than null.
+    const path = try alloc.dupeZ(u8, root);
+    defer alloc.free(path);
+    try db.close();
+    const no_config = switch (notmuch.Database.open(.read_only, .{
+        .database_path = path,
+        .config_path = "",
+    })) {
+        .ok => |d| d,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer no_config.deinit() catch {};
+    try std.testing.expectEqualStrings("", no_config.configPath() orelse return error.TestUnexpectedResult);
+}
+
 test "Database.getAllTags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();

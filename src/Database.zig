@@ -960,7 +960,8 @@ pub fn configGetBool(
 }
 
 /// Return the path of the config file loaded. Returns `null` if no config file
-/// was loaded.
+/// was loaded. A database opened with `""` as `config_path` (explicitly no
+/// configuration file) reports `""` rather than `null`.
 pub fn configPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_config_path(self.database) orelse return null);
 }
