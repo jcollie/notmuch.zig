@@ -1,7 +1,14 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` C APIs that deal with messages.
+//! A single email message in the notmuch database.
+//!
+//! Obtained from searches (`Query.searchMessages`), lookups
+//! (`Database.findMessage`), thread traversal, or indexing. Exposes the
+//! message's identity, headers, dates, and filenames, and supports mutating
+//! tags and properties, synchronizing maildir flags, and batching tag changes
+//! with `freeze`/`thaw`. The message is owned by the query or database it
+//! came from; `deinit` releases it sooner.
 const Message = @This();
 
 const std = @import("std");

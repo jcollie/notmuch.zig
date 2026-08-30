@@ -1,7 +1,13 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around `notmuch` message thread APIs.
+//! A thread of messages matching a search, as returned by
+//! `Query.searchThreads`.
+//!
+//! Exposes the thread's subject, authors, dates, and message and file
+//! counts, plus traversal of its messages via `getToplevelMessages` and
+//! `getMessages`. The thread is owned by the query it derived from; `deinit`
+//! releases it sooner.
 const Thread = @This();
 
 const std = @import("std");

@@ -1,8 +1,13 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A Zig wrapper around the `notmuch` C APIs for dealing with
-//! lists of messages.
+//! Iterator over a list of messages, as returned by `Query.searchMessages`,
+//! `Thread.getMessages`, and `Message.getReplies`.
+//!
+//! `next` returns `Message` objects owned by the underlying query;
+//! `collectTags` gathers the tags of all remaining messages instead. The
+//! iterator is owned by the query it derived from; `deinit` releases it
+//! sooner.
 const MessagesIterator = @This();
 
 const c = @import("c");

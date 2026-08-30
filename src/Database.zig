@@ -1,7 +1,14 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` database APIs.
+//! An open notmuch database.
+//!
+//! Obtain one with `open` or `create`; both return a tagged union carrying
+//! either the database or an error along with libnotmuch's human-readable
+//! message. A database supports searching via `queryCreate`, indexing and
+//! removing mail files, message lookup by ID or filename, atomic sections,
+//! configuration access, and maintenance operations such as `upgrade` and
+//! `compact`. Call `deinit` to close and free the database when finished.
 
 const Database = @This();
 

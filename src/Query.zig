@@ -1,6 +1,13 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! A search of the notmuch database, created with `Database.queryCreate` or
+//! `Database.queryCreateWithSyntax`.
+//!
+//! Configure the search with `setSort`, `setOmitExcluded`, and
+//! `addTagExclude`, then run it with `searchMessages` or `searchThreads`, or
+//! count the results with `countMessages` and `countThreads`. Everything a
+//! query returns is owned by the query and freed by `deinit`.
 const Query = @This();
 
 const std = @import("std");

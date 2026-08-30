@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Iterator over `notmuch` tags.
+//! Iterator over a list of tags, as returned by `Message.getTags`,
+//! `Thread.getTags`, `Database.getAllTags`, and
+//! `MessagesIterator.collectTags`.
+//!
+//! The iterator is owned by the object it came from; `deinit` releases it
+//! sooner.
 const TagsIterator = @This();
 
 const std = @import("std");

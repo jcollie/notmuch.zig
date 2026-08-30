@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` C APIs that deal with config pair lists.
+//! Iterator over (key, value) configuration pairs, as returned by
+//! `Database.configGetPairs`.
+//!
+//! The strings returned by `next` live only as long as the iterator.
 pub const PairsIterator = @This();
 
 const std = @import("std");

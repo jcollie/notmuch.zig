@@ -1,8 +1,21 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig bindings for the Notmuch C API.
+//! Zig bindings for the notmuch mail indexer's C library, `libnotmuch`.
 //!
+//! Start with `Database.open` or `Database.create` to get a `Database`, then
+//! create a `Query` with `Database.queryCreate` to search for `Message` and
+//! `Thread` objects. Search results come back as iterators
+//! (`MessagesIterator`, `ThreadsIterator`, and friends) with a `next` method.
+//!
+//! `notmuch_status_t` return codes are translated into Zig error sets,
+//! narrowed per function to the codes that call can actually return; the full
+//! set is `Error`. A status a function is not documented to return maps to
+//! `error.Unexpected`.
+//!
+//! Objects returned from a query — messages, threads, tags, filenames — are
+//! owned by the object they came from and are freed along with it; their
+//! `deinit` methods merely release memory sooner.
 const std = @import("std");
 
 const c = @import("c");

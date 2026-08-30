@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A Zig wrapper around the `notmuch` C APIs for dealing with
-//! lists of filenames.
+//! Iterator over a list of filenames, as returned by `Message.getFilenames`
+//! and the `Directory` child listings.
+//!
+//! The strings returned by `next` are owned by the iterator's parent object.
+//! The iterator itself is owned by the object it came from; `deinit` releases
+//! it sooner.
 pub const FilenamesIterator = @This();
 
 const std = @import("std");

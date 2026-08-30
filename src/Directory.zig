@@ -1,7 +1,13 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` directory APIs.
+//! A directory entry in the notmuch database, obtained from
+//! `Database.getDirectory`.
+//!
+//! Stores a directory modification time (`getMtime`/`setMtime`) so callers
+//! can efficiently detect new mail, and lists the database's knowledge of the
+//! directory's contents via `getChildFiles` and `getChildDirectories`. The
+//! directory object is owned by the database; `deinit` releases it sooner.
 const Directory = @This();
 
 const std = @import("std");

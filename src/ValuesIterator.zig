@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` C APIs that deal with value lists.
+//! Iterator over a `;`-delimited list of configuration values, as returned
+//! by `Database.configGetValues` and `Database.configGetValuesString`.
+//!
+//! The strings returned by `next` live only as long as the iterator; `start`
+//! resets iteration to the first value.
 pub const ValuesIterator = @This();
 
 const std = @import("std");

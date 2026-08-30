@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! Zig enums mirroring the C enumerations in `notmuch.h`.
+//!
+//! Each enum takes its values directly from the C constants and is checked
+//! against the header at compile time, so building against a libnotmuch whose
+//! enumerations have changed fails the build instead of misbehaving at
+//! runtime.
 const std = @import("std");
 
 const c = @import("c");

@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` C APIs that deal with property lists.
+//! Iterator over the (key, value) properties of a message, as returned by
+//! `Message.getProperties`.
+//!
+//! Owned by the message it came from and valid only as long as the message.
 const PropertiesIterator = @This();
 
 const std = @import("std");

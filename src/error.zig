@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+//! The `Error` set covering every `notmuch_status_t` code, and `wrap`, which
+//! converts a C status return into a Zig error union.
+//!
+//! Wrappers with narrowed error sets instead convert the codes they document
+//! individually and map anything undocumented to `error.Unexpected`.
 const std = @import("std");
 
 const c = @import("c");

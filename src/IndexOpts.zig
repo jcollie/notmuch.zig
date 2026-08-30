@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Zig wrapper around the `notmuch` C APIs that deal with index options.
+//! Message indexing options, obtained from `Database.getDefaultIndexOpts`
+//! and passed to `Database.indexFile` and `Message.reindex`.
+//!
+//! Currently the only option is the decryption policy
+//! (`setDecryptPolicy`/`getDecryptPolicy`).
 const IndexOpts = @This();
 
 const std = @import("std");
