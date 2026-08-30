@@ -568,6 +568,73 @@ test "Message maildir flags" {
     try message.maildirFlagsToTags();
 }
 
+test "Message.maildirFlagsToTags" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A maildir file with the "flagged" flag set but not "seen".
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/five:2,F",
+        .data =
+        \\From: Erin <erin@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: Flagged mail
+        \\Date: Thu, 04 Apr 2024 10:00:00 +0000
+        \\Message-ID: <five@example.org>
+        \\
+        \\This one is flagged.
+        \\
+        ,
+    });
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five:2,F" });
+    defer alloc.free(path);
+    const message = try db.indexFileGetMessage(path, null);
+    defer message.deinit();
+
+    try std.testing.expect(try message.hasMaildirFlag(.F));
+    try std.testing.expect(!try message.hasMaildirFlag(.S));
+    try std.testing.expect(!try message.hasMaildirFlag(.D));
+
+    try message.maildirFlagsToTags();
+
+    // F present adds "flagged"; S absent performs the opposite of removing
+    // "unread", i.e. adds it.
+    var tags = message.getTags();
+    try std.testing.expect(hasTag(&tags, "flagged"));
+    tags = message.getTags();
+    try std.testing.expect(hasTag(&tags, "unread"));
+}
+
+test "Message.tagsToMaildirFlags renames the file" {
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addTag("flagged");
+    try message.addTag("passed");
+    // No "unread" tag, so the seen flag is set as well.
+    try message.tagsToMaildirFlags();
+
+    const filename = try message.getFilename();
+    try std.testing.expect(std.mem.endsWith(u8, filename, "one.eml:2,FPS"));
+    try std.testing.expect(try message.hasMaildirFlag(.F));
+    try std.testing.expect(try message.hasMaildirFlag(.P));
+    try std.testing.expect(try message.hasMaildirFlag(.S));
+
+    // The file was renamed on disk, not copied.
+    try test_db.tmp.dir.access(io, "mail/cur/one.eml:2,FPS", .{});
+    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, "mail/cur/one.eml", .{}));
+}
+
 test "Thread accessors" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
