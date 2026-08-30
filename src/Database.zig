@@ -480,6 +480,20 @@ pub fn getPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_database_get_path(self.database) orelse return null);
 }
 
+test getPath {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // The path is the absolute location of the mail store the database was
+    // opened on — here the fixture's "mail" directory.
+    const path = db.getPath() orelse return error.TestUnexpectedResult;
+    try std.testing.expect(std.fs.path.isAbsolute(path));
+    try std.testing.expectEqualStrings("mail", std.fs.path.basename(path));
+}
+
 /// Return the database format version of the database.
 ///
 /// Returns `error.FormatVersionError` if the version cannot be determined

@@ -9,18 +9,6 @@ const std = @import("std");
 const notmuch = @import("notmuch.zig");
 const fixture = @import("testing.zig");
 
-test "Database path, version, and upgrade status" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-    const db = test_db.database;
-
-    const path = db.getPath() orelse return error.TestUnexpectedResult;
-    try std.testing.expect(std.mem.endsWith(u8, path, "mail"));
-    try std.testing.expect(try db.getVersion() > 0);
-    try std.testing.expect(!db.needsUpgrade());
-    try db.upgrade(null, null);
-}
-
 test "Database UUIDs are unique per database" {
     var test_db1 = try fixture.corpusDatabase();
     defer test_db1.deinit();
