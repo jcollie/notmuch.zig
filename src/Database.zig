@@ -966,6 +966,22 @@ pub fn findMessage(self: *const Database, message_id: [:0]const u8) FindMessageE
     };
 }
 
+test findMessage {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Look a message up by its Message-ID (without the angle brackets).
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try std.testing.expectEqualStrings("Lunch plans", message.getHeader("Subject") orelse "");
+
+    // An unknown message ID returns null.
+    try std.testing.expectEqual(@as(?Message, null), try db.findMessage("missing@example.org"));
+}
+
 /// Find a message with the given filename.
 ///
 /// If the database contains a message with the given filename then a message
