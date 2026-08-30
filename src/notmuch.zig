@@ -8,13 +8,19 @@ const std = @import("std");
 const c = @import("c");
 
 pub const Database = @import("Database.zig");
+pub const Directory = @import("Directory.zig");
 pub const Error = @import("error.zig").Error;
 pub const FilenamesIterator = @import("FilenamesIterator.zig");
+pub const IndexOpts = @import("IndexOpts.zig");
 pub const Message = @import("Message.zig");
 pub const MessagesIterator = @import("MessagesIterator.zig");
+pub const PairsIterator = @import("PairsIterator.zig");
+pub const PropertiesIterator = @import("PropertiesIterator.zig");
 pub const Query = @import("Query.zig");
+pub const TagsIterator = @import("TagsIterator.zig");
 pub const Thread = @import("Thread.zig");
 pub const ThreadsIterator = @import("ThreadsIterator.zig");
+pub const ValuesIterator = @import("ValuesIterator.zig");
 
 /// The maximum length of a tag.
 pub const tag_max: usize = @intCast(c.NOTMUCH_TAG_MAX);

@@ -132,11 +132,14 @@ release memory sooner than the enclosing query would.
 
 | Type | Covers |
 | --- | --- |
-| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; atomic sections; indexing and removing files; message lookup; configuration keys and values |
+| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; atomic sections; revisions; indexing and removing files; message lookup; directory lookup; configuration keys, values and pairs |
 | `notmuch.Query` | query strings and syntax, sort order, tag exclusions, message and thread searches, result counts |
 | `notmuch.Message` | message and thread IDs, headers, dates, filenames, flags, tags, maildir flag synchronization, properties, freeze/thaw, reindexing |
 | `notmuch.Thread` | thread ID, subject, authors, oldest/newest dates, message and file counts, contained messages, tags |
+| `notmuch.Directory` | directory mtimes, child files and subdirectories, deletion |
+| `notmuch.IndexOpts` | indexing options, including the decryption policy |
 | `notmuch.MessagesIterator`, `notmuch.ThreadsIterator`, `notmuch.FilenamesIterator` | iteration over search results |
+| `notmuch.TagsIterator`, `notmuch.PropertiesIterator`, `notmuch.PairsIterator`, `notmuch.ValuesIterator` | iteration over tags, message properties, and configuration data |
 | `notmuch.Error` | the full set of `notmuch_status_t` codes as Zig errors |
 | `notmuch.compact`, `notmuch.builtWith`, `notmuch.tag_max` | module-level helpers |
 
