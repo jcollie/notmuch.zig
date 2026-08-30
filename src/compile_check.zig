@@ -45,6 +45,9 @@ test "every wrapper body compiles" {
     _ = try db.queryCreateWithSyntax("tag:inbox", .xapian);
     _ = try db.configGet(.user_name);
     try db.configSet(.user_name, "value");
+    const config_string = try db.configGetString("key");
+    config_string.deinit();
+    try db.configSetString("key", "value");
     _ = db.configGetValues(.new_tags);
     _ = db.configGetValuesString("key");
     _ = db.configGetPairs("prefix");

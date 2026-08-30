@@ -1392,6 +1392,67 @@ test configSet {
     try std.testing.expectError(error.ReadOnlyDatabase, db.configSet(.user_name, "nope"));
 }
 
+/// A configuration value returned by `configGetString`. The caller owns it
+/// and must call `deinit` to free it.
+pub const ConfigString = struct {
+    /// The configuration value; `""` for a key that has never been set.
+    value: [:0]const u8,
+
+    /// Free the value.
+    pub fn deinit(self: ConfigString) void {
+        c.free(@ptrCast(@constCast(self.value.ptr)));
+    }
+};
+
+/// Retrieve the configuration item `key` from an open database.
+///
+/// Unlike `configGet`, which is limited to the keys notmuch knows about, any
+/// string key can be read — including ones private to an application (for
+/// example "zig.custom"). A key which has never been set reads as the empty
+/// string.
+///
+/// The caller owns the returned value and must call its `deinit` to free it.
+pub fn configGetString(self: *const Database, key: [:0]const u8) Error!ConfigString {
+    var value: [*c]u8 = null;
+    try wrap(c.notmuch_database_get_config(self.database, key, &value));
+    if (value == null) return error.Unexpected;
+    return .{ .value = std.mem.span(value) };
+}
+
+/// Set the configuration item `key` to `value`.
+///
+/// Unlike `configSet`, which is limited to the keys notmuch knows about, any
+/// string key can be written. The value is stored in the database itself,
+/// not in the configuration file. The database must be open in read-write
+/// mode.
+pub fn configSetString(self: *const Database, key: [:0]const u8, value: [:0]const u8) Error!void {
+    try wrap(c.notmuch_database_set_config(self.database, key, value));
+}
+
+test configSetString {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Any key can be stored and read back, including application-private
+    // ones.
+    try db.configSetString("zig.custom", "hello");
+    const custom = try db.configGetString("zig.custom");
+    defer custom.deinit();
+    try std.testing.expectEqualStrings("hello", custom.value);
+
+    // A key that has never been set reads as the empty string.
+    const unset = try db.configGetString("zig.never-set");
+    defer unset.deinit();
+    try std.testing.expectEqualStrings("", unset.value);
+
+    // Writing requires a read-write database.
+    try test_db.database.reopen(.read_only);
+    try std.testing.expectError(error.ReadOnlyDatabase, db.configSetString("zig.custom", "nope"));
+}
+
 /// Returns an iterator for a `;`-delimited list of configuration values.
 ///
 /// These values reflect all configuration information given at the

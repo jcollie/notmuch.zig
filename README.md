@@ -21,8 +21,8 @@ narrowed set also includes `error.Unexpected` as a catch-all, so an
 undocumented status surfaces as a recoverable error rather than a crash.
 
 > **Status:** early. The API still changes without notice. All of the current
-> (non-deprecated) `libnotmuch` API is wrapped except string-keyed
-> configuration access and a few introspection functions.
+> (non-deprecated) `libnotmuch` API is wrapped except a few introspection
+> functions.
 
 ## Requirements
 
@@ -164,7 +164,7 @@ defer allocator.free(content);
 
 | Type | Covers |
 | --- | --- |
-| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; atomic sections; revisions; indexing and removing files; message lookup; directory lookup; configuration keys, values and pairs |
+| `notmuch.Database` | opening, creating, closing, upgrading and compacting databases; atomic sections; revisions; indexing and removing files; message lookup; directory lookup; typed and string-keyed configuration access, values and pairs |
 | `notmuch.Query` | query strings and syntax, sort order, tag exclusions, message and thread searches, result counts |
 | `notmuch.Message` | message and thread IDs, headers, dates, filenames, flags, tags, maildir flag synchronization, properties, freeze/thaw, reindexing |
 | `notmuch.Thread` | thread ID, subject, authors, oldest/newest dates, message and file counts, contained messages, tags |
