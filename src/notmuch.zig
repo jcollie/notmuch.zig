@@ -49,4 +49,5 @@ test {
     std.testing.refAllDecls(@This());
     _ = @import("compile_check.zig");
     _ = @import("testing.zig");
+    _ = @import("tests.zig");
 }

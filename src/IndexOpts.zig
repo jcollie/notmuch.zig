@@ -8,7 +8,7 @@ const std = @import("std");
 
 const c = @import("c");
 
-const Decrypt = @import("enums.zig").Decrypt;
+pub const Decrypt = @import("enums.zig").Decrypt;
 const Error = @import("error.zig").Error;
 const wrap = @import("error.zig").wrap;
 
