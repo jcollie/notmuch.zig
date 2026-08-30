@@ -931,6 +931,38 @@ pub fn configGetValuesString(
     };
 }
 
+test configGetValuesString {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Default configuration is visible through string keys: new.tags
+    // defaults to unread;inbox.
+    var new_tags = db.configGetValuesString("new.tags") orelse return error.TestUnexpectedResult;
+    defer new_tags.deinit();
+    var saw_unread = false;
+    var saw_inbox = false;
+    while (new_tags.next()) |value| {
+        if (std.mem.eql(u8, value, "unread")) saw_unread = true;
+        if (std.mem.eql(u8, value, "inbox")) saw_inbox = true;
+    }
+    try std.testing.expect(saw_unread);
+    try std.testing.expect(saw_inbox);
+
+    // A string key reads the same configuration as its typed equivalent.
+    try db.configSet(.exclude_tags, "spam;deleted");
+    var excluded = db.configGetValuesString("search.exclude_tags") orelse return error.TestUnexpectedResult;
+    defer excluded.deinit();
+    try std.testing.expectEqualStrings("spam", excluded.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("deleted", excluded.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqual(@as(?[:0]const u8, null), excluded.next());
+
+    // An unknown key yields no iterator at all.
+    try std.testing.expect(db.configGetValuesString("bogus.key") == null);
+}
+
 /// Returns an iterator for (key, value) configuration pairs whose keys start
 /// with `prefix`. Pass "" as the prefix to iterate over all pairs.
 ///

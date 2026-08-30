@@ -375,13 +375,6 @@ test "Database.configGetValues" {
     values.start();
     try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
 
-    // The string-keyed variant reads the same configuration.
-    var by_string = db.configGetValuesString("search.exclude_tags") orelse return error.TestUnexpectedResult;
-    defer by_string.deinit();
-    try std.testing.expectEqualStrings("spam", by_string.next() orelse return error.TestUnexpectedResult);
-
-    // An unknown key yields no iterator at all.
-    try std.testing.expect(db.configGetValuesString("bogus.key") == null);
 }
 
 test "Database.configGetPairs" {
