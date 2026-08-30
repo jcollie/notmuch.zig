@@ -31,7 +31,7 @@ pub fn getQueryString(self: *const Query) [:0]const u8 {
 /// Return the notmuch database of this query. See `Database.queryCreate`.
 pub fn getDatabase(self: *const Query) ?Database {
     return .{
-        .database = c.notmuch_query_get_database(self.query) orelse null,
+        .database = c.notmuch_query_get_database(self.query) orelse return null,
     };
 }
 
@@ -169,7 +169,7 @@ pub fn countMessages(self: *const Query) CountMessagesError!u32 {
     var count: c_uint = undefined;
     return switch (status(c.notmuch_query_count_messages(self.query, &count))) {
         .success => @intCast(count),
-        .xapian_error => error.XapianError,
+        .xapian_exception => error.XapianError,
         else => unreachable,
     };
 }

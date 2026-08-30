@@ -43,8 +43,8 @@ pub fn setMtime(self: *const Directory, mtime: i64) Error!void {
 /// Get the mtime of a directory, (as previously stored with `setMtime`).
 ///
 /// Returns `null` if no mtime has previously been stored for this directory.
-pub fn getMtime(self: *const Directory) Error!?i64 {
-    const mtime = try wrap(c.notmuch_directory_get_mtime(self.directory));
+pub fn getMtime(self: *const Directory) ?i64 {
+    const mtime = c.notmuch_directory_get_mtime(self.directory);
     if (mtime == 0) return null;
     return @intCast(mtime);
 }
