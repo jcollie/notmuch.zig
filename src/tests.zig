@@ -139,6 +139,28 @@ test "Database atomic sections" {
     try std.testing.expect(hasTag(&tags, "atomic-test"));
 }
 
+test "Database atomic section error paths" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // endAtomic without a matching beginAtomic is unbalanced.
+    try std.testing.expectError(error.UnbalancedAtomic, db.endAtomic());
+
+    // Atomic sections nest; the extra endAtomic is unbalanced again.
+    try db.beginAtomic();
+    try db.beginAtomic();
+    try db.endAtomic();
+    try db.endAtomic();
+    try std.testing.expectError(error.UnbalancedAtomic, db.endAtomic());
+
+    // On a read-only database notmuch does not open a Xapian transaction, so
+    // a balanced pair still succeeds.
+    try test_db.database.reopen(.read_only);
+    try db.beginAtomic();
+    try db.endAtomic();
+}
+
 test "Database.getDirectory and Directory" {
     const alloc = std.testing.allocator;
     var test_db = try fixture.corpusDatabase();
