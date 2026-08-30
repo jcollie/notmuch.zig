@@ -20,8 +20,9 @@ operations on a closed database return codes no function documents — every
 narrowed set also includes `error.Unexpected` as a catch-all, so an
 undocumented status surfaces as a recoverable error rather than a crash.
 
-> **Status:** early. The API still changes without notice, and not every part
-> of `libnotmuch` is wrapped yet.
+> **Status:** early. The API still changes without notice. All of the current
+> (non-deprecated) `libnotmuch` API is wrapped except string-keyed
+> configuration access and a few introspection functions.
 
 ## Requirements
 
@@ -136,6 +137,29 @@ Everything returned by a query — messages, threads, tags, filenames — is own
 by the object it came from, so the `deinit` calls above are optional; they just
 release memory sooner than the enclosing query would.
 
+### Helpers
+
+Beyond the wrappers, `notmuch.helpers` composes the bindings with the Zig
+standard library. `MessageWriter` streams an email into the mail store through
+a `std.Io.Writer` and indexes it: a unique, timestamp-prefixed maildir
+filename is generated, and the file is materialized atomically, so no
+partially written message is ever visible. `MessageReader` reads a message's
+raw content back through a `std.Io.Reader`:
+
+```zig
+var buffer: [4096]u8 = undefined;
+
+var mw = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
+try mw.writer().print("Message-ID: <{s}>\r\n\r\nHello!\r\n", .{message_id});
+const message = try mw.finish(null);
+defer message.deinit();
+
+var mr = try notmuch.helpers.MessageReader.init(io, message, &buffer);
+defer mr.deinit();
+const content = try mr.reader().allocRemaining(allocator, .unlimited);
+defer allocator.free(content);
+```
+
 ### What's available
 
 | Type | Covers |
@@ -175,9 +199,17 @@ Run the test suite with:
 $ zig build test
 ```
 
+The suite exercises the bindings against real notmuch databases built in
+temporary directories from a small embedded email corpus (`src/testing.zig`).
+Usage-example tests sit next to the functions they exercise as doctests, so
+they double as examples in the generated API documentation; edge cases and
+error paths live in `src/tests.zig`. A compile-check test
+(`src/compile_check.zig`) gives every public wrapper a real call site, since
+Zig never analyzes the body of a function that is never called.
+
 `test/build-archive.sh` builds a throwaway notmuch database from a git
 repository's commit log, which is useful for exercising the bindings against
-real mail-shaped data.
+larger volumes of real mail-shaped data.
 
 The project is [REUSE](https://reuse.software/) compliant; `reuse lint` checks
 that every file carries copyright and licensing information.
