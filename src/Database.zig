@@ -398,6 +398,7 @@ pub fn close(self: *const Database) CloseError!void {
         else => return error.Unexpected,
     }
 }
+
 /// Compact the notmuch database, backing up the original database to the given
 /// path.
 ///
@@ -759,6 +760,7 @@ pub fn findMessage(self: *const Database, message_id: [:0]const u8) FindMessageE
         else => error.Unexpected,
     };
 }
+
 /// Find a message with the given filename.
 ///
 /// If the database contains a message with the given filename then a message
