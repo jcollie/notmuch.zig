@@ -213,6 +213,48 @@ test "Database message lookup and removal" {
     try std.testing.expectEqual(@as(u32, fixture.corpus.len - 1), try query.countMessages());
 }
 
+test "Database.removeMessage with a message stored under multiple filenames" {
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Index a second file carrying the same Message-ID as one.eml.
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/one-copy.eml",
+        .data = fixture.corpus[0].data,
+    });
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const original = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one.eml" });
+    defer alloc.free(original);
+    const copy = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one-copy.eml" });
+    defer alloc.free(copy);
+
+    try db.indexFile(copy, null);
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try std.testing.expectEqual(@as(usize, 2), try message.countFiles());
+
+    // Removing one filename reports DuplicateMessageID: the filename is gone
+    // but the message persists under the remaining filename.
+    try std.testing.expectError(error.DuplicateMessageID, db.removeMessage(original));
+    const remaining = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer remaining.deinit();
+    try std.testing.expectEqual(@as(usize, 1), try remaining.countFiles());
+    try std.testing.expect(std.mem.endsWith(u8, try remaining.getFilename(), "one-copy.eml"));
+
+    // Removing the last filename removes the message content. Because
+    // two@example.org references this message ID, notmuch keeps it as a
+    // "ghost": findable, but with no files.
+    try db.removeMessage(copy);
+    const ghost = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer ghost.deinit();
+    try std.testing.expect(try ghost.getFlag(.ghost));
+}
+
 test "Database configuration access" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
@@ -444,6 +486,30 @@ test "Message freeze and thaw" {
 
     var tags = message.getTags();
     try std.testing.expect(hasTag(&tags, "frozen"));
+}
+
+test "Message freeze and thaw error paths" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // thaw without a matching freeze is unbalanced.
+    try std.testing.expectError(error.UnbalancedFreezeThaw, message.thaw());
+
+    // freeze/thaw calls stack; the extra thaw is unbalanced again.
+    try message.freeze();
+    try message.freeze();
+    try message.thaw();
+    try message.thaw();
+    try std.testing.expectError(error.UnbalancedFreezeThaw, message.thaw());
+
+    // freeze requires a read-write database.
+    try test_db.database.reopen(.read_only);
+    const ro_message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer ro_message.deinit();
+    try std.testing.expectError(error.ReadOnlyDatabase, ro_message.freeze());
 }
 
 test "Message properties" {

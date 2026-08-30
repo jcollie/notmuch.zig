@@ -721,8 +721,15 @@ pub const RemoveMessageError = error{
 ///
 /// If the same message (as determined by the message ID) is still available
 /// via other filenames, then the message will persist in the database for those
-/// filenames. When the last filename is removed for a particular message, the
-/// database content for that message will be entirely removed.
+/// filenames, and removing one of them reports `error.DuplicateMessageID`.
+/// When the last filename is removed for a particular message, the database
+/// content for that message will be entirely removed.
+///
+/// However, if the message ID is referenced by another message still in the
+/// database (for example via In-Reply-To or References headers), removing the
+/// last filename leaves behind a "ghost message": `findMessage` still finds
+/// it, but it has only a message ID and thread ID, and `Message.getFlag` with
+/// `.ghost` reports true for it.
 pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessageError!void {
     return switch (status(c.notmuch_database_remove_message(self.database, filename))) {
         .success => {},
