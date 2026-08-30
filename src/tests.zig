@@ -319,6 +319,45 @@ test "Database configuration access" {
     try std.testing.expect(saw_pair);
 }
 
+test "Database configGet and configSet" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A value from the configuration file.
+    try std.testing.expectEqualStrings(
+        "zig@example.org",
+        try db.configGet(.primary_email) orelse return error.TestUnexpectedResult,
+    );
+
+    // Round-trip through the database, including overwriting.
+    try db.configSet(.user_name, "Test User");
+    try std.testing.expectEqualStrings(
+        "Test User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+    try db.configSet(.user_name, "Renamed User");
+    try std.testing.expectEqualStrings(
+        "Renamed User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+
+    // Values set through configSet persist across close and reopen.
+    try db.close();
+    try test_db.database.reopen(.read_write);
+    try std.testing.expectEqualStrings(
+        "Renamed User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+
+    // configGetBool rejects values that are not booleans.
+    try std.testing.expectError(error.IllegalArgument, db.configGetBool(.primary_email));
+
+    // configSet requires a read-write database.
+    try test_db.database.reopen(.read_only);
+    try std.testing.expectError(error.ReadOnlyDatabase, db.configSet(.user_name, "nope"));
+}
+
 test "Database.getAllTags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
