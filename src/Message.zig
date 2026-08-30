@@ -98,6 +98,7 @@ pub fn countFiles(self: *const Message) CountFilesError!usize {
 }
 
 pub const GetFilenameError = error{
+    /// A Xapian exception occurred.
     XapianException,
 };
 
@@ -121,6 +122,7 @@ pub fn getFilename(self: *const Message) GetFilenameError![:0]const u8 {
 }
 
 pub const GetFilenamesError = error{
+    /// A Xapian exception occurred.
     XapianException,
 };
 
@@ -158,6 +160,7 @@ pub fn reindex(self: *const Message, indexopts: ?IndexOpts) Error!void {
 }
 
 pub const GetFlagError = error{
+    /// A Xapian exception occurred.
     XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,
@@ -270,6 +273,7 @@ pub fn removeTag(self: *const Message, tag: [:0]const u8) RemoveTagError!void {
 pub const RemoveAllTagsError = error{
     /// Database was opened in read-only mode so message cannot be modified.
     ReadOnlyDatabase,
+    /// A Xapian exception occurred.
     XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,
@@ -320,6 +324,7 @@ pub fn maildirFlagsToTags(self: *const Message) Error!void {
 }
 
 pub const HasMaildirFlagError = error{
+    /// A Xapian exception occurred.
     XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,

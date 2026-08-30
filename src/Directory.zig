@@ -56,6 +56,7 @@ pub fn getMtime(self: *const Directory) ?i64 {
 }
 
 pub const GetChildFilesError = error{
+    /// A Xapian exception occurred.
     XapianException,
 };
 
@@ -71,6 +72,7 @@ pub fn getChildFiles(self: *const Directory) GetChildFilesError!FilenamesIterato
 }
 
 pub const GetChildDirectoriesError = error{
+    /// A Xapian exception occurred.
     XapianException,
 };
 

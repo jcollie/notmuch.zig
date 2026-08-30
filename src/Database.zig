@@ -371,7 +371,13 @@ test create {
     try std.testing.expect(r == .ok);
 }
 
-pub const CloseError = error{ XapianException, Unexpected };
+pub const CloseError = error{
+    /// A Xapian exception occurred. The database has still been closed, but
+    /// there is no guarantee that any changes were flushed to disk.
+    XapianException,
+    /// libnotmuch returned an undocumented status code.
+    Unexpected,
+};
 
 /// Commit changes and close the given notmuch database.
 ///
