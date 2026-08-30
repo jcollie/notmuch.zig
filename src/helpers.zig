@@ -143,7 +143,12 @@ pub const MessageWriter = struct {
     }
 
     /// The generated maildir filename (the basename only) the message will
-    /// be — or after `finish`, has been — delivered under.
+    /// be delivered under.
+    ///
+    /// The returned slice points into the writer and is invalidated by
+    /// `finish` and `cancel`; copy it if it is needed afterwards. After a
+    /// successful `finish`, `Message.getFilename` on the returned message
+    /// reports the full delivered path.
     pub fn filename(self: *const MessageWriter) []const u8 {
         return self.name_buf[0..self.name_len];
     }

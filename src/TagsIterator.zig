@@ -17,6 +17,11 @@ const c = @import("c");
 /// an empty list.
 tags: ?*c.notmuch_tags_t,
 
+/// Get the next tag, or `null` if there are no more tags.
+///
+/// The returned string belongs to the tags object and has a lifetime
+/// identical to it (and the object to which it ultimately belongs). It must
+/// not be modified or freed by the caller.
 pub fn next(self: *TagsIterator) ?[:0]const u8 {
     const tags = self.tags orelse return null;
     if (c.notmuch_tags_valid(tags) == 0) return null;

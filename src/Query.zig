@@ -33,6 +33,10 @@ pub fn init(query: *c.notmuch_query_t) Query {
 }
 
 /// Return the query string of this query. See `Database.queryCreate`
+///
+/// The returned string belongs to the query: it must not be modified or
+/// freed by the caller, and it remains valid until the query is
+/// deinitialized.
 pub fn getQueryString(self: *const Query) [:0]const u8 {
     return std.mem.span(c.notmuch_query_get_query_string(self.query));
 }

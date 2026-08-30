@@ -19,6 +19,12 @@ pub const KV = struct {
     value: [:0]const u8,
 };
 
+/// Get the next property as a key/value pair, or `null` if there are no
+/// more properties.
+///
+/// The returned strings belong to the message the iterator came from and
+/// must not be modified or freed by the caller; they remain valid as long
+/// as the message is.
 pub fn next(self: PropertiesIterator) ?KV {
     const properties = self.properties orelse return null;
     if (c.notmuch_message_properties_valid(properties) == 0) return null;

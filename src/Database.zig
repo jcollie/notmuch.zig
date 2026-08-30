@@ -638,7 +638,8 @@ pub fn deinit(self: *const Database) Error!void {
 /// Return the database path of the database.
 ///
 /// The return value is a string owned by `notmuch` so should not be modified
-/// nor freed by the caller.
+/// nor freed by the caller; it remains valid until the database is
+/// deinitialized.
 pub fn getPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_database_get_path(self.database) orelse return null);
 }
@@ -1323,6 +1324,9 @@ test findMessageByFilename {
 /// This function creates a list of all tags found in the database. The
 /// resulting list contains all tags from all messages found in the database.
 ///
+/// The caller owns the returned iterator and should release it with its
+/// `deinit`; the tag strings it yields belong to the iterator.
+///
 /// On error this function returns `null`.
 pub fn getAllTags(self: *const Database) ?TagsIterator {
     return .{
@@ -1823,6 +1827,10 @@ test configGetBool {
 /// Return the path of the config file loaded. Returns `null` if no config file
 /// was loaded. A database opened with `""` as `config_path` (explicitly no
 /// configuration file) reports `""` rather than `null`.
+///
+/// The returned string is owned by the database: it must not be modified or
+/// freed by the caller, and it remains valid until the database is
+/// deinitialized.
 pub fn configPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_config_path(self.database) orelse return null);
 }
