@@ -543,6 +543,25 @@ test "Message properties" {
     try std.testing.expectEqual(@as(usize, 0), try message.countProperties("test.key"));
 }
 
+test "Message property error paths" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    // Property keys may not contain an '=' character.
+    try std.testing.expectError(error.IllegalArgument, message.addProperty("bad=key", "value"));
+    try std.testing.expectError(error.IllegalArgument, message.removeProperty("bad=key", "value"));
+
+    // The remove-all variants require a read-write database.
+    try test_db.database.reopen(.read_only);
+    const ro_message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer ro_message.deinit();
+    try std.testing.expectError(error.ReadOnlyDatabase, ro_message.removeAllProperties("test.key"));
+    try std.testing.expectError(error.ReadOnlyDatabase, ro_message.removeAllPropertiesWithPrefix("test."));
+}
+
 test "Message flags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
