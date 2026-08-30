@@ -1,0 +1,9 @@
+From: Bob <bob@example.org>
+To: Alice <alice@example.org>
+Subject: Re: Lunch plans
+Date: Mon, 01 Apr 2024 09:30:00 +0000
+Message-ID: <two@example.org>
+In-Reply-To: <one@example.org>
+References: <one@example.org>
+
+Sure, see you at the usual place.

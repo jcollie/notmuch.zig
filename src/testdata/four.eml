@@ -1,0 +1,7 @@
+From: Dave <dave@example.org>
+To: Alice <alice@example.org>
+Subject: Zig bindings
+Date: Wed, 03 Apr 2024 08:15:00 +0000
+Message-ID: <four@example.org>
+
+Have you tried the notmuch Zig bindings yet?

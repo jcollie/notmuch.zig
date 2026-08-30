@@ -48,4 +48,5 @@ pub fn builtWith(name: [:0]const u8) bool {
 test {
     std.testing.refAllDecls(@This());
     _ = @import("compile_check.zig");
+    _ = @import("testing.zig");
 }
