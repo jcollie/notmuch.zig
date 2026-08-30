@@ -418,6 +418,20 @@ test "Query tag exclusion" {
     try std.testing.expectEqual(fixture.corpus.len - 1, count);
 }
 
+test "Query tag exclusion error paths" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("tag:spam");
+    defer query.deinit();
+
+    // Excluding a tag that appears explicitly in the query is ignored.
+    try std.testing.expectError(error.Ignored, query.addTagExclude("spam"));
+
+    // Other tags can still be excluded.
+    try query.addTagExclude("other");
+}
+
 test "Message identity, headers, and dates" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
