@@ -255,6 +255,34 @@ test "Database.removeMessage with a message stored under multiple filenames" {
     try std.testing.expect(try ghost.getFlag(.ghost));
 }
 
+test "Database.findMessageByFilename" {
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+
+    // Lookup by absolute filename.
+    const abs = try std.fs.path.joinZ(alloc, &.{ root, "cur", "two.eml" });
+    defer alloc.free(abs);
+    const by_abs = try db.findMessageByFilename(abs) orelse return error.TestUnexpectedResult;
+    defer by_abs.deinit();
+    try std.testing.expectEqualStrings("two@example.org", by_abs.getMessageID() orelse "");
+
+    // Lookup by filename relative to the database path.
+    const by_rel = try db.findMessageByFilename("cur/two.eml") orelse return error.TestUnexpectedResult;
+    defer by_rel.deinit();
+    try std.testing.expectEqualStrings("two@example.org", by_rel.getMessageID() orelse "");
+
+    // Unknown filenames return null.
+    try std.testing.expectEqual(@as(?notmuch.Message, null), try db.findMessageByFilename("cur/missing.eml"));
+
+    // A closed database reports a Xapian exception.
+    try db.close();
+    try std.testing.expectError(error.XapianException, db.findMessageByFilename(abs));
+}
+
 test "Database configuration access" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();

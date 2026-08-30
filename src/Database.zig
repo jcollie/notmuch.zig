@@ -744,10 +744,13 @@ pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessag
 pub const FindMessageError = error{
     /// Out of memory creating message object.
     OutOfMemory,
-    /// The caller must upgrade the database to use this function
-    /// (`findMessageByFilename` only).
+    /// The database is in an older on-disk format that cannot look messages
+    /// up by filename; call `Database.upgrade` first. Returned by
+    /// `findMessageByFilename` only.
     UpgradeRequired,
-    /// A Xapian exception occurred.
+    /// The underlying Xapian database reported an error — for example, the
+    /// database has been closed, or an I/O failure occurred while reading
+    /// it.
     XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,
