@@ -12,6 +12,56 @@ const Database = @import("Database.zig");
 const IndexOpts = @import("IndexOpts.zig");
 const Message = @import("Message.zig");
 
+/// Reads the contents of a message from the mail store through a
+/// `std.Io.Reader`.
+///
+/// The content is read from the file backing the message. For a message
+/// stored under multiple filenames (identical message IDs), the file
+/// reported by `Message.getFilename` — an arbitrary one of them — is opened.
+///
+/// `buffer` is caller-owned and must remain valid until `deinit` is called.
+pub const MessageReader = struct {
+    file_reader: std.Io.File.Reader,
+
+    /// Open the file backing `message` for reading. Reads are buffered
+    /// through `buffer`.
+    pub fn init(io: std.Io, message: Message, buffer: []u8) !MessageReader {
+        const file = try std.Io.Dir.openFileAbsolute(io, try message.getFilename(), .{});
+        return .{ .file_reader = file.reader(io, buffer) };
+    }
+
+    /// The `std.Io.Reader` producing the raw message content.
+    pub fn reader(self: *MessageReader) *std.Io.Reader {
+        return &self.file_reader.interface;
+    }
+
+    /// Close the message file.
+    pub fn deinit(self: *MessageReader) void {
+        self.file_reader.file.close(self.file_reader.io);
+        self.* = undefined;
+    }
+};
+
+test MessageReader {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    var buffer: [256]u8 = undefined;
+    var message_reader = try MessageReader.init(std.testing.io, message, &buffer);
+    defer message_reader.deinit();
+
+    // The reader produces the raw message content, byte for byte.
+    const content = try message_reader.reader().allocRemaining(alloc, .unlimited);
+    defer alloc.free(content);
+    try std.testing.expectEqualStrings(fixture.corpus[0].data, content);
+}
+
 /// The maildir subdirectory a message is delivered into.
 pub const Subdir = enum {
     /// Mail that has not yet been seen by the user.
