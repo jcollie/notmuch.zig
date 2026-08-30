@@ -20,6 +20,8 @@ const wrap = @import("error.zig").wrap;
 const MessagesIterator = @import("MessagesIterator.zig");
 const TagsIterator = @import("TagsIterator.zig");
 
+/// The underlying `notmuch_thread_t` handle; only needed directly when
+/// calling libnotmuch C APIs these bindings do not wrap.
 thread: *c.notmuch_thread_t,
 
 /// Get the thread ID of `thread`.

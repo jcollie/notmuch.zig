@@ -10,6 +10,8 @@ pub const PairsIterator = @This();
 const std = @import("std");
 const c = @import("c");
 
+/// The underlying `notmuch_config_pairs_t` handle; only needed directly
+/// when calling libnotmuch C APIs these bindings do not wrap.
 pairs: *c.notmuch_config_pairs_t,
 
 pub const Pair = struct {

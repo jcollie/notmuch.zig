@@ -16,6 +16,8 @@ pub const Decrypt = @import("enums.zig").Decrypt;
 const Error = @import("error.zig").Error;
 const wrap = @import("error.zig").wrap;
 
+/// The underlying `notmuch_indexopts_t` handle; only needed directly when
+/// calling libnotmuch C APIs these bindings do not wrap.
 indexopts: *c.notmuch_indexopts_t,
 
 /// Specify whether to decrypt encrypted parts while indexing.

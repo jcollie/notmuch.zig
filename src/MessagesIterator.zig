@@ -16,6 +16,8 @@ const Message = @import("Message.zig");
 const TagsIterator = @import("TagsIterator.zig");
 const status = @import("enums.zig").status;
 
+/// The underlying `notmuch_messages_t` handle, or `null` for an iterator
+/// over an empty list.
 messages: ?*c.notmuch_messages_t,
 
 pub const NextError = error{

@@ -40,6 +40,9 @@ const wrapMessage = @import("error.zig").wrapMessage;
 /// compaction process.
 pub const StatusCallback = *const fn (message: [*c]const u8, closure: ?*anyopaque) callconv(.c) void;
 
+/// The underlying `notmuch_database_t` handle. Managed by `open`/`create`
+/// and released by `deinit`; only needed directly when calling libnotmuch C
+/// APIs these bindings do not wrap.
 database: *c.notmuch_database_t,
 
 pub const OpenCreateOptions = struct {

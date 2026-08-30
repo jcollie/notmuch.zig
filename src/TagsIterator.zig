@@ -13,6 +13,8 @@ const std = @import("std");
 
 const c = @import("c");
 
+/// The underlying `notmuch_tags_t` handle, or `null` for an iterator over
+/// an empty list.
 tags: ?*c.notmuch_tags_t,
 
 pub fn next(self: *TagsIterator) ?[:0]const u8 {

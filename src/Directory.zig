@@ -17,6 +17,8 @@ const Error = @import("error.zig").Error;
 const FilenamesIterator = @import("FilenamesIterator.zig");
 const wrap = @import("error.zig").wrap;
 
+/// The underlying `notmuch_directory_t` handle; only needed directly when
+/// calling libnotmuch C APIs these bindings do not wrap.
 directory: *c.notmuch_directory_t,
 
 /// Store an mtime within the database for `Directory`.

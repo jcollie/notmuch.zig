@@ -24,6 +24,8 @@ const status = @import("enums.zig").status;
 const ThreadsIterator = @import("ThreadsIterator.zig");
 const wrap = @import("error.zig").wrap;
 
+/// The underlying `notmuch_query_t` handle; only needed directly when
+/// calling libnotmuch C APIs these bindings do not wrap.
 query: *c.notmuch_query_t,
 
 pub fn init(query: *c.notmuch_query_t) Query {

@@ -27,7 +27,13 @@ const status = @import("enums.zig").status;
 const TagsIterator = @import("TagsIterator.zig");
 const wrap = @import("error.zig").wrap;
 
+/// For a message returned by `Database.indexFileGetMessage`: whether the
+/// indexed file carried a message ID already present in the database (its
+/// index was merged into the existing message). `null` for messages obtained
+/// any other way.
 duplicate: ?bool = null,
+/// The underlying `notmuch_message_t` handle; only needed directly when
+/// calling libnotmuch C APIs these bindings do not wrap.
 message: *c.notmuch_message_t,
 
 /// Get the database associated with this message.

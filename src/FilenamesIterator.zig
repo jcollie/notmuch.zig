@@ -12,6 +12,8 @@ pub const FilenamesIterator = @This();
 const std = @import("std");
 const c = @import("c");
 
+/// The underlying `notmuch_filenames_t` handle, or `null` for an iterator
+/// over an empty list.
 filenames: ?*c.notmuch_filenames_t,
 
 /// Get the next filename from `FilenamesIterator` as a string.

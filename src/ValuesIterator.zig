@@ -11,6 +11,8 @@ pub const ValuesIterator = @This();
 const std = @import("std");
 const c = @import("c");
 
+/// The underlying `notmuch_config_values_t` handle; only needed directly
+/// when calling libnotmuch C APIs these bindings do not wrap.
 values: *c.notmuch_config_values_t,
 
 /// Get the next value, or `null` if there are no more values.

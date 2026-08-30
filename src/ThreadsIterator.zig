@@ -10,6 +10,8 @@ const c = @import("c");
 const Thread = @import("Thread.zig");
 const status = @import("enums.zig").status;
 
+/// The underlying `notmuch_threads_t` handle, or `null` for an iterator
+/// over an empty list.
 threads: ?*c.notmuch_threads_t,
 
 pub const NextError = error{

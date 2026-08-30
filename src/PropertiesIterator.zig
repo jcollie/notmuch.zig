@@ -10,6 +10,8 @@ const PropertiesIterator = @This();
 const std = @import("std");
 const c = @import("c");
 
+/// The underlying `notmuch_message_properties_t` handle, or `null` for an
+/// iterator over an empty list.
 properties: ?*c.notmuch_message_properties_t,
 
 pub const KV = struct {
