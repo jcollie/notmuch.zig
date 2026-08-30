@@ -1208,9 +1208,6 @@ test configSet {
         try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
     );
 
-    // configGetBool rejects values that are not booleans.
-    try std.testing.expectError(error.IllegalArgument, db.configGetBool(.primary_email));
-
     // configSet requires a read-write database.
     try test_db.database.reopen(.read_only);
     try std.testing.expectError(error.ReadOnlyDatabase, db.configSet(.user_name, "nope"));
@@ -1371,6 +1368,26 @@ pub fn configGetBool(
     var value: c.notmuch_bool_t = undefined;
     try wrap(c.notmuch_config_get_bool(self.database, @intFromEnum(key), &value));
     return value != 0;
+}
+
+test configGetBool {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // maildir.synchronize_flags defaults to true.
+    try std.testing.expect(try db.configGetBool(.sync_maildir_flags));
+
+    // Boolean values round-trip through configSet.
+    try db.configSet(.sync_maildir_flags, "false");
+    try std.testing.expect(!try db.configGetBool(.sync_maildir_flags));
+    try db.configSet(.sync_maildir_flags, "true");
+    try std.testing.expect(try db.configGetBool(.sync_maildir_flags));
+
+    // A value that does not convert to a boolean is rejected.
+    try std.testing.expectError(error.IllegalArgument, db.configGetBool(.primary_email));
 }
 
 /// Return the path of the config file loaded. Returns `null` if no config file
