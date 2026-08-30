@@ -98,27 +98,60 @@ pub const OpenCreateOptions = struct {
 };
 
 pub const OpenError = error{
+    /// libnotmuch reported a `null` pointer argument. The bindings always
+    /// pass a valid output pointer, so this is not expected in practice.
     NullPointer,
+    /// No configuration file was found. Fatal. Pass `""` as `config_path` to
+    /// open the database without one.
     NoConfig,
+    /// No database was found at `database_path` (or at the location
+    /// determined from the environment and configuration).
     NoDatabase,
+    /// libnotmuch is older than 5.6, the minimum version these bindings
+    /// support. Reported by the bindings themselves, before calling into
+    /// libnotmuch.
     NotmuchVersion,
+    /// Out of memory.
     OutOfMemory,
+    /// An error occurred trying to open the database or configuration file
+    /// (such as permission denied, or file not found), or the database
+    /// version is unknown.
     FileError,
+    /// There is a problem with the supplied path, e.g. a relative path where
+    /// an absolute path is required.
     PathError,
+    /// A Xapian exception occurred.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
     Unexpected,
 };
 
+/// The result of `open`: either an open database or an error paired with
+/// libnotmuch's human-readable message.
+///
+/// A tagged union is used instead of an error union because the message
+/// accompanying a failure has to be retrieved and freed alongside the error;
+/// call the `err` variant's `deinit` when done with it.
 pub const OpenResult = union(enum) {
+    /// The successfully opened database. The caller owns it and should call
+    /// `Database.deinit` when finished with it.
     ok: Database,
+    /// The failure, along with an optional message from libnotmuch.
     err: struct {
+        /// The error corresponding to the status code libnotmuch returned.
         err: OpenError,
+        /// The raw error message, if any. Use `message` to read it and
+        /// `deinit` to free it.
         msg: [*c]u8,
 
+        /// Return the human-readable error message from libnotmuch, or
+        /// `null` if there is none. The string is owned by this result and
+        /// is freed by `deinit`.
         pub fn message(self: @This()) ?[:0]const u8 {
             return std.mem.span(self.msg orelse return null);
         }
 
+        /// Free the error message. Safe to call when there is no message.
         pub fn deinit(self: @This()) void {
             c.free(@ptrCast(@constCast(self.msg)));
         }
@@ -180,25 +213,53 @@ pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
 }
 
 pub const CreateError = error{
+    /// A database already exists at `database_path`, so it was not
+    /// (re-)created.
     DatabaseExists,
+    /// An error occurred trying to create the database or open the
+    /// configuration file (such as permission denied, or file not found).
     FileError,
+    /// No configuration file was found. Pass `""` as `config_path` to create
+    /// the database without one.
     NoConfig,
+    /// libnotmuch is older than 5.6, the minimum version these bindings
+    /// support. Reported by the bindings themselves, before calling into
+    /// libnotmuch.
     NotmuchVersion,
+    /// Out of memory.
     OutOfMemory,
+    /// A Xapian exception occurred.
     XapianException,
+    /// libnotmuch returned an undocumented status code.
     Unexpected,
 };
 
+/// The result of `create`: either the newly created database or an error
+/// paired with libnotmuch's human-readable message.
+///
+/// A tagged union is used instead of an error union because the message
+/// accompanying a failure has to be retrieved and freed alongside the error;
+/// call the `err` variant's `deinit` when done with it.
 pub const CreateResult = union(enum) {
+    /// The newly created database, open in read-write mode. The caller owns
+    /// it and should call `Database.deinit` when finished with it.
     ok: Database,
+    /// The failure, along with an optional message from libnotmuch.
     err: struct {
+        /// The error corresponding to the status code libnotmuch returned.
         err: CreateError,
+        /// The raw error message, if any. Use `message` to read it and
+        /// `deinit` to free it.
         msg: [*c]u8,
 
+        /// Return the human-readable error message from libnotmuch, or
+        /// `null` if there is none. The string is owned by this result and
+        /// is freed by `deinit`.
         pub fn message(self: @This()) ?[:0]const u8 {
             return std.mem.span(self.msg orelse return null);
         }
 
+        /// Free the error message. Safe to call when there is no message.
         pub fn deinit(self: @This()) void {
             c.free(@ptrCast(@constCast(self.msg)));
         }
