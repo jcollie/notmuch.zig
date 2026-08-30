@@ -48,6 +48,26 @@ pub fn setMtime(self: *const Directory, mtime: i64) Error!void {
     try wrap(c.notmuch_directory_set_mtime(self.directory, mtime));
 }
 
+test setMtime {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+
+    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    defer directory.deinit();
+
+    // The stored mtime is read back with getMtime.
+    try directory.setMtime(1711962000);
+    try std.testing.expectEqual(@as(?i64, 1711962000), directory.getMtime());
+}
+
 /// Get the mtime of a directory, (as previously stored with `setMtime`).
 ///
 /// Returns `null` if no mtime has previously been stored for this directory.
@@ -55,6 +75,30 @@ pub fn getMtime(self: *const Directory) ?i64 {
     const mtime = c.notmuch_directory_get_mtime(self.directory);
     if (mtime == 0) return null;
     return @intCast(mtime);
+}
+
+test getMtime {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+
+    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    defer directory.deinit();
+
+    // No mtime has been stored yet.
+    try std.testing.expectEqual(@as(?i64, null), directory.getMtime());
+
+    // The documented caveat: a stored timestamp of 0 cannot be
+    // distinguished from a non-existent one.
+    try directory.setMtime(0);
+    try std.testing.expectEqual(@as(?i64, null), directory.getMtime());
 }
 
 pub const GetChildFilesError = error{
@@ -73,6 +117,33 @@ pub fn getChildFiles(self: *const Directory) GetChildFilesError!FilenamesIterato
     };
 }
 
+test getChildFiles {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+
+    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    defer directory.deinit();
+
+    // All the indexed corpus messages live in cur; the entries are
+    // basenames, not complete paths.
+    var files = try directory.getChildFiles();
+    defer files.deinit();
+    var count: usize = 0;
+    while (files.next()) |name| {
+        try std.testing.expect(std.mem.indexOfScalar(u8, name, '/') == null);
+        count += 1;
+    }
+    try std.testing.expectEqual(fixture.corpus.len, count);
+}
+
 pub const GetChildDirectoriesError = error{
     /// A Xapian exception occurred.
     XapianException,
@@ -89,11 +160,64 @@ pub fn getChildDirectories(self: *const Directory) GetChildDirectoriesError!File
     };
 }
 
+test getChildDirectories {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+
+    // The mail root knows about cur, where the corpus was indexed.
+    const mail_root = try db.getDirectory(root) orelse return error.TestUnexpectedResult;
+    defer mail_root.deinit();
+    var dirs = try mail_root.getChildDirectories();
+    defer dirs.deinit();
+    var saw_cur = false;
+    while (dirs.next()) |name| {
+        if (std.mem.eql(u8, name, "cur")) saw_cur = true;
+    }
+    try std.testing.expect(saw_cur);
+
+    // cur itself has no sub-directories in the database.
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+    const cur = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    defer cur.deinit();
+    var none = try cur.getChildDirectories();
+    defer none.deinit();
+    try std.testing.expectEqual(@as(?[:0]const u8, null), none.next());
+}
+
 /// Delete directory document from the database, and deinitialize the
 /// `Directory` object. Assumes any child directories and files have been
 /// deleted by the caller.
 pub fn delete(self: *const Directory) Error!void {
     try wrap(c.notmuch_directory_delete(self.directory));
+}
+
+test delete {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+
+    // Store an mtime, then delete the directory document. delete also
+    // deinitializes the object, so no deinit call follows.
+    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    try directory.setMtime(1711962000);
+    try directory.delete();
+
+    // The directory document is gone from the database.
+    try std.testing.expectEqual(@as(?Directory, null), try db.getDirectory(cur_path));
 }
 
 /// Deinitialize a `Directory` object.
