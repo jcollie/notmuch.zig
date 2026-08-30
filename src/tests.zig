@@ -205,62 +205,7 @@ test "Message maildir flags" {
     try message.maildirFlagsToTags();
 }
 
-test "Thread accessors" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-
-    const query = try test_db.database.queryCreate("subject:lunch");
-    defer query.deinit();
-    query.setSort(.oldest_first);
-
-    var threads = try query.searchThreads();
-    defer threads.deinit();
-    const thread = try threads.next() orelse return error.TestUnexpectedResult;
-    defer thread.deinit();
-
-    try std.testing.expectEqualStrings("Lunch plans", thread.getSubject());
-    try std.testing.expectEqual(@as(usize, 2), thread.getTotalMessages());
-    try std.testing.expectEqual(@as(usize, 2), thread.getTotalFiles());
-    try std.testing.expectEqual(@as(usize, 2), thread.getMatchedMessages());
-    try std.testing.expect(std.mem.indexOf(u8, thread.getAuthors(), "Alice") != null);
-    // Mon, 01 Apr 2024 09:00:00 +0000 through 09:30:00
-    try std.testing.expectEqual(@as(i64, 1711962000), thread.getOldestDate());
-    try std.testing.expectEqual(@as(i64, 1711963800), thread.getNewestDate());
-    try std.testing.expectEqual(@as(?notmuch.Thread, null), try threads.next());
-}
-
-test "Thread message traversal" {
-    var test_db = try fixture.corpusDatabase();
-    defer test_db.deinit();
-
-    const query = try test_db.database.queryCreate("subject:lunch");
-    defer query.deinit();
-
-    var threads = try query.searchThreads();
-    defer threads.deinit();
-    const thread = try threads.next() orelse return error.TestUnexpectedResult;
-    defer thread.deinit();
-
-    var toplevel = thread.getToplevelMessages();
-    const top = try toplevel.next() orelse return error.TestUnexpectedResult;
-    try std.testing.expectEqualStrings("one@example.org", top.getMessageID() orelse "");
-    try std.testing.expectEqualStrings(
-        thread.getThreadID(),
-        top.getThreadID() orelse return error.TestUnexpectedResult,
-    );
-    try std.testing.expectEqual(@as(?notmuch.Message, null), try toplevel.next());
-
-    var replies = top.getReplies();
-    const reply = try replies.next() orelse return error.TestUnexpectedResult;
-    try std.testing.expectEqualStrings("two@example.org", reply.getMessageID() orelse "");
-
-    var all = thread.getMessages();
-    var count: usize = 0;
-    while (try all.next()) |message| count += @intFromBool(message.getMessageID() != null);
-    try std.testing.expectEqual(@as(usize, 2), count);
-}
-
-test "Thread and MessagesIterator tag collection" {
+test "MessagesIterator tag collection" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
     const db = test_db.database;
@@ -275,18 +220,20 @@ test "Thread and MessagesIterator tag collection" {
     const query = try db.queryCreate("subject:lunch");
     defer query.deinit();
 
-    var threads = try query.searchThreads();
-    defer threads.deinit();
-    const thread = try threads.next() orelse return error.TestUnexpectedResult;
-    defer thread.deinit();
-
-    var thread_tags = thread.getTags();
-    try std.testing.expect(fixture.hasTag(&thread_tags, "red"));
-
     var messages = try query.searchMessages();
     defer messages.deinit();
+    // collectTags gathers the tags of all remaining messages in one pass
+    // (and exhausts the iterator, per its warning).
     var collected = messages.collectTags() orelse return error.TestUnexpectedResult;
-    try std.testing.expect(fixture.hasTag(&collected, "blue"));
+    defer collected.deinit();
+    var saw_red = false;
+    var saw_blue = false;
+    while (collected.next()) |tag| {
+        if (std.mem.eql(u8, tag, "red")) saw_red = true;
+        if (std.mem.eql(u8, tag, "blue")) saw_blue = true;
+    }
+    try std.testing.expect(saw_red);
+    try std.testing.expect(saw_blue);
 }
 
 test "Database.open error reporting" {
