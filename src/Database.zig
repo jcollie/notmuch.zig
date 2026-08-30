@@ -756,6 +756,52 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
     };
 }
 
+test indexFile {
+    const fixture = @import("testing.zig");
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/five.eml",
+        .data =
+        \\From: Erin <erin@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: Indexed by hand
+        \\Date: Thu, 04 Apr 2024 10:00:00 +0000
+        \\Message-ID: <five@example.org>
+        \\
+        \\Indexed with Database.indexFile.
+        \\
+        ,
+    });
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five.eml" });
+    defer alloc.free(path);
+
+    try db.indexFile(path, null);
+    const message = try db.findMessage("five@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try std.testing.expectEqualStrings("Indexed by hand", message.getHeader("Subject") orelse "");
+
+    // Indexing a file whose message ID is already known merges silently;
+    // duplicates are not an error.
+    try db.indexFile(path, null);
+
+    // A file that is not an email is rejected.
+    try test_db.tmp.dir.writeFile(io, .{ .sub_path = "mail/cur/junk", .data = "" });
+    const junk_path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "junk" });
+    defer alloc.free(junk_path);
+    try std.testing.expectError(error.FileNotEmail, db.indexFile(junk_path, null));
+
+    // A path outside the database's mail root is rejected before it is read.
+    try std.testing.expectError(error.FileError, db.indexFile("/etc/hostname", null));
+}
+
 /// Add a message file to a database, indexing it for retrieval by future
 /// searches, and return a message object. If a message already exists with the
 /// same message ID as the specified file, their indexes will be merged, and
