@@ -358,6 +358,32 @@ test "Database configGet and configSet" {
     try std.testing.expectError(error.ReadOnlyDatabase, db.configSet(.user_name, "nope"));
 }
 
+test "Database.configGetValues" {
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.exclude_tags, "spam;deleted");
+
+    var values = db.configGetValues(.exclude_tags) orelse return error.TestUnexpectedResult;
+    defer values.deinit();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("deleted", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqual(@as(?[:0]const u8, null), values.next());
+
+    // start() resets the iterator to the first value.
+    values.start();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
+
+    // The string-keyed variant reads the same configuration.
+    var by_string = db.configGetValuesString("search.exclude_tags") orelse return error.TestUnexpectedResult;
+    defer by_string.deinit();
+    try std.testing.expectEqualStrings("spam", by_string.next() orelse return error.TestUnexpectedResult);
+
+    // An unknown key yields no iterator at all.
+    try std.testing.expect(db.configGetValuesString("bogus.key") == null);
+}
+
 test "Database.getAllTags" {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
