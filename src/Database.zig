@@ -1131,6 +1131,35 @@ pub fn queryCreate(self: *const Database, query_string: [:0]const u8) error{OutO
     return .init(c.notmuch_query_create(self.database, query_string) orelse return error.OutOfMemory);
 }
 
+test queryCreate {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A term query.
+    const lunch = try db.queryCreate("subject:lunch");
+    defer lunch.deinit();
+    try std.testing.expectEqual(@as(u32, 2), try lunch.countMessages());
+
+    // Both "" and "*" match all messages in the database.
+    const empty = try db.queryCreate("");
+    defer empty.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len), try empty.countMessages());
+
+    const star = try db.queryCreate("*");
+    defer star.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len), try star.countMessages());
+
+    // Iterate the matches with searchMessages.
+    var messages = try lunch.searchMessages();
+    defer messages.deinit();
+    var count: usize = 0;
+    while (try messages.next()) |message| : (count += 1) message.deinit();
+    try std.testing.expectEqual(@as(usize, 2), count);
+}
+
 /// Create a new query.
 ///
 /// For the query string, we'll document the syntax here more completely in the
