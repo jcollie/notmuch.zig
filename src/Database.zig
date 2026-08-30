@@ -212,6 +212,35 @@ pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
     };
 }
 
+test open {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    // Close the writer so its changes are committed and visible to readers.
+    const path = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    defer alloc.free(path);
+    try test_db.database.close();
+
+    const ro = switch (open(.read_only, .{
+        .database_path = path,
+        .config_path = "",
+    })) {
+        .ok => |db| db,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer ro.deinit() catch {};
+
+    const query = try ro.queryCreate("*");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len), try query.countMessages());
+}
+
 pub const CreateError = error{
     /// A database already exists at `database_path`, so it was not
     /// (re-)created.
@@ -453,6 +482,20 @@ pub fn getVersion(self: *const Database) error{FormatVersionError}!u32 {
     return version;
 }
 
+test getVersion {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const version = try test_db.database.getVersion();
+    try std.testing.expect(version > 0);
+
+    // A closed database has no determinable version.
+    try test_db.database.close();
+    try std.testing.expectError(error.FormatVersionError, test_db.database.getVersion());
+}
+
 /// Can the database be upgraded to a newer database version?
 ///
 /// If this function returns `true`, then the caller may call `upgrade`
@@ -503,6 +546,23 @@ pub fn beginAtomic(self: *const Database) error{ XapianException, Unexpected }!v
         .xapian_exception => return error.XapianException,
         else => return error.Unexpected,
     }
+}
+
+test beginAtomic {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.beginAtomic();
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("atomic-test");
+    try db.endAtomic();
+
+    var tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "atomic-test"));
 }
 
 /// Indicate the end of an atomic database operation. If repeated (with matching
@@ -560,6 +620,25 @@ pub fn getRevision(self: *const Database) Revision {
     };
 }
 
+test getRevision {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    var previous = db.getRevision();
+    for ([_][:0]const u8{ "mono-one", "mono-two", "mono-three" }) |tag| {
+        try message.addTag(tag);
+        const current = db.getRevision();
+        try std.testing.expect(try current.compare(previous) == .gt);
+        previous = current;
+    }
+}
+
 /// Retrieve a directory object from the database for `path`.
 ///
 /// Here, 'path' should be a path relative to the path of `database` (see
@@ -584,6 +663,36 @@ pub fn getDirectory(self: *const Database, path: [:0]const u8) Error!?Directory 
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test getDirectory {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
+    defer alloc.free(cur_path);
+
+    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    defer directory.deinit();
+
+    try std.testing.expectEqual(@as(?i64, null), directory.getMtime());
+    try directory.setMtime(12345);
+    try std.testing.expectEqual(@as(?i64, 12345), directory.getMtime());
+
+    var files = try directory.getChildFiles();
+    defer files.deinit();
+    var count: usize = 0;
+    while (files.next()) |_| count += 1;
+    try std.testing.expectEqual(fixture.corpus.len, count);
+
+    var dirs = try directory.getChildDirectories();
+    defer dirs.deinit();
+    try std.testing.expectEqual(@as(?[:0]const u8, null), dirs.next());
 }
 
 pub const IndexFileError = error{
@@ -702,6 +811,42 @@ pub fn indexFileGetMessage(self: *const Database, filename: [:0]const u8, indexo
     };
 }
 
+test indexFileGetMessage {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/five.eml",
+        .data =
+        \\From: Erin <erin@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: One more thing
+        \\Date: Thu, 04 Apr 2024 10:00:00 +0000
+        \\Message-ID: <five@example.org>
+        \\
+        \\Just one more thing.
+        \\
+        ,
+    });
+
+    const root = test_db.database.getPath() orelse return error.TestUnexpectedResult;
+    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five.eml" });
+    defer alloc.free(path);
+
+    const message = try test_db.database.indexFileGetMessage(path, null);
+    defer message.deinit();
+    try std.testing.expectEqualStrings("five@example.org", message.getMessageID() orelse "");
+
+    try test_db.database.reopen(.read_only);
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, fixture.corpus.len + 1), try query.countMessages());
+}
+
 pub const RemoveMessageError = error{
     /// This filename was removed but the message persists in the database with at
     /// least one other filename.
@@ -739,6 +884,50 @@ pub fn removeMessage(self: *const Database, filename: [:0]const u8) RemoveMessag
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test removeMessage {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // Index a second file carrying the same Message-ID as one.eml.
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/one-copy.eml",
+        .data = fixture.corpus[0].data,
+    });
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const original = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one.eml" });
+    defer alloc.free(original);
+    const copy = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one-copy.eml" });
+    defer alloc.free(copy);
+
+    try db.indexFile(copy, null);
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try std.testing.expectEqual(@as(usize, 2), try message.countFiles());
+
+    // Removing one filename reports DuplicateMessageID: the filename is gone
+    // but the message persists under the remaining filename.
+    try std.testing.expectError(error.DuplicateMessageID, db.removeMessage(original));
+    const remaining = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer remaining.deinit();
+    try std.testing.expectEqual(@as(usize, 1), try remaining.countFiles());
+    try std.testing.expect(std.mem.endsWith(u8, try remaining.getFilename(), "one-copy.eml"));
+
+    // Removing the last filename removes the message content. Because
+    // two@example.org references this message ID, notmuch keeps it as a
+    // "ghost": findable, but with no files.
+    try db.removeMessage(copy);
+    const ghost = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer ghost.deinit();
+    try std.testing.expect(try ghost.getFlag(.ghost));
 }
 
 pub const FindMessageError = error{
@@ -799,6 +988,36 @@ pub fn findMessageByFilename(self: *const Database, filename: [:0]const u8) Find
     };
 }
 
+test findMessageByFilename {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+
+    // Lookup by absolute filename.
+    const abs = try std.fs.path.joinZ(alloc, &.{ root, "cur", "two.eml" });
+    defer alloc.free(abs);
+    const by_abs = try db.findMessageByFilename(abs) orelse return error.TestUnexpectedResult;
+    defer by_abs.deinit();
+    try std.testing.expectEqualStrings("two@example.org", by_abs.getMessageID() orelse "");
+
+    // Lookup by filename relative to the database path.
+    const by_rel = try db.findMessageByFilename("cur/two.eml") orelse return error.TestUnexpectedResult;
+    defer by_rel.deinit();
+    try std.testing.expectEqualStrings("two@example.org", by_rel.getMessageID() orelse "");
+
+    // Unknown filenames return null.
+    try std.testing.expectEqual(@as(?Message, null), try db.findMessageByFilename("cur/missing.eml"));
+
+    // A closed database reports a Xapian exception.
+    try db.close();
+    try std.testing.expectError(error.XapianException, db.findMessageByFilename(abs));
+}
+
 /// Return a list of all tags found in the database.
 ///
 /// This function creates a list of all tags found in the database. The
@@ -809,6 +1028,21 @@ pub fn getAllTags(self: *const Database) ?TagsIterator {
     return .{
         .tags = c.notmuch_database_get_all_tags(self.database) orelse return null,
     };
+}
+
+test getAllTags {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("four@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("zig");
+
+    var tags = db.getAllTags() orelse return error.TestUnexpectedResult;
+    try std.testing.expect(fixture.hasTag(&tags, "zig"));
 }
 
 pub const ReopenError = error{
@@ -832,6 +1066,48 @@ pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test reopen {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const path = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    defer alloc.free(path);
+
+    // A second, read-only connection to the same database.
+    var reader = switch (open(.read_only, .{
+        .database_path = path,
+        .config_path = "",
+    })) {
+        .ok => |db| db,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer reader.deinit() catch {};
+
+    {
+        const query = try reader.queryCreate("tag:fresh");
+        defer query.deinit();
+        try std.testing.expectEqual(@as(u32, 0), try query.countMessages());
+    }
+
+    // The writer tags a message and commits by closing.
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+    try message.addTag("fresh");
+    try test_db.database.close();
+
+    // The reader sees the change only after reopening.
+    try reader.reopen(.read_only);
+    const query = try reader.queryCreate("tag:fresh");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, 1), try query.countMessages());
 }
 
 /// Create a new query.
@@ -899,6 +1175,47 @@ pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!
     try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
 }
 
+test configSet {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A value from the configuration file.
+    try std.testing.expectEqualStrings(
+        "zig@example.org",
+        try db.configGet(.primary_email) orelse return error.TestUnexpectedResult,
+    );
+
+    // Round-trip through the database, including overwriting.
+    try db.configSet(.user_name, "Test User");
+    try std.testing.expectEqualStrings(
+        "Test User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+    try db.configSet(.user_name, "Renamed User");
+    try std.testing.expectEqualStrings(
+        "Renamed User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+
+    // Values set through configSet persist across close and reopen.
+    try db.close();
+    try test_db.database.reopen(.read_write);
+    try std.testing.expectEqualStrings(
+        "Renamed User",
+        try db.configGet(.user_name) orelse return error.TestUnexpectedResult,
+    );
+
+    // configGetBool rejects values that are not booleans.
+    try std.testing.expectError(error.IllegalArgument, db.configGetBool(.primary_email));
+
+    // configSet requires a read-write database.
+    try test_db.database.reopen(.read_only);
+    try std.testing.expectError(error.ReadOnlyDatabase, db.configSet(.user_name, "nope"));
+}
+
 /// Returns an iterator for a `;`-delimited list of configuration values.
 ///
 /// These values reflect all configuration information given at the
@@ -913,6 +1230,26 @@ pub fn configGetValues(
     return .{
         .values = c.notmuch_config_get_values(self.database, @intFromEnum(key)) orelse return null,
     };
+}
+
+test configGetValues {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.exclude_tags, "spam;deleted");
+
+    var values = db.configGetValues(.exclude_tags) orelse return error.TestUnexpectedResult;
+    defer values.deinit();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("deleted", values.next() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqual(@as(?[:0]const u8, null), values.next());
+
+    // start() resets the iterator to the first value.
+    values.start();
+    try std.testing.expectEqualStrings("spam", values.next() orelse return error.TestUnexpectedResult);
 }
 
 /// Returns an iterator for a ';'-delimited list of configuration values
@@ -973,6 +1310,51 @@ pub fn configGetPairs(self: *const Database, prefix: [:0]const u8) ?PairsIterato
     };
 }
 
+test configGetPairs {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    try db.configSet(.user_name, "Test User");
+
+    // A prefix restricts iteration to matching keys.
+    var user_pairs = db.configGetPairs("user.") orelse return error.TestUnexpectedResult;
+    defer user_pairs.deinit();
+    var user_count: usize = 0;
+    var saw_name = false;
+    while (user_pairs.next()) |pair| {
+        try std.testing.expect(std.mem.startsWith(u8, pair.key, "user."));
+        if (std.mem.eql(u8, pair.key, "user.name")) {
+            saw_name = true;
+            try std.testing.expectEqualStrings("Test User", pair.value orelse "");
+        }
+        user_count += 1;
+    }
+    try std.testing.expect(saw_name);
+
+    // The empty prefix iterates over all pairs, a superset of any prefix.
+    var all_pairs = db.configGetPairs("") orelse return error.TestUnexpectedResult;
+    defer all_pairs.deinit();
+    var all_count: usize = 0;
+    var saw_null_value = false;
+    while (all_pairs.next()) |pair| {
+        if (pair.value == null) saw_null_value = true;
+        all_count += 1;
+    }
+    try std.testing.expect(all_count > user_count);
+
+    // Some keys carry no value; next() reports them as null rather than
+    // crashing (regression check for the PairsIterator NULL-value fix).
+    try std.testing.expect(saw_null_value);
+
+    // An unknown prefix yields an empty iteration.
+    var unknown = db.configGetPairs("bogus.") orelse return error.TestUnexpectedResult;
+    defer unknown.deinit();
+    try std.testing.expect(unknown.next() == null);
+}
+
 /// Get a configuration value from an open database as boolean.
 ///
 /// This value reflects all configuration information given at the time the
@@ -998,6 +1380,43 @@ pub fn configPath(self: *const Database) ?[:0]const u8 {
     return std.mem.span(c.notmuch_config_path(self.database) orelse return null);
 }
 
+test configPath {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // The reported path is the config file the database was opened with,
+    // which the fixture places next to the mail root.
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const expected = try std.fs.path.join(alloc, &.{
+        std.fs.path.dirname(root) orelse return error.TestUnexpectedResult,
+        "config",
+    });
+    defer alloc.free(expected);
+    try std.testing.expectEqualStrings(expected, db.configPath() orelse return error.TestUnexpectedResult);
+
+    // A database opened with config_path "" reports the empty string as its
+    // config path rather than null.
+    const path = try alloc.dupeZ(u8, root);
+    defer alloc.free(path);
+    try db.close();
+    const no_config = switch (open(.read_only, .{
+        .database_path = path,
+        .config_path = "",
+    })) {
+        .ok => |d| d,
+        .err => |e| {
+            defer e.deinit();
+            return e.err;
+        },
+    };
+    defer no_config.deinit() catch {};
+    try std.testing.expectEqualStrings("", no_config.configPath() orelse return error.TestUnexpectedResult);
+}
+
 /// Get the current default indexing options for a given database.
 ///
 /// This object will survive until the database itself is destroyed, but the
@@ -1009,6 +1428,30 @@ pub fn getDefaultIndexOpts(self: *const Database) ?IndexOpts {
     return .{
         .indexopts = c.notmuch_database_get_default_indexopts(self.database) orelse return null,
     };
+}
+
+test getDefaultIndexOpts {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // With no index.decrypt configuration, the default policy is auto.
+    const indexopts = db.getDefaultIndexOpts() orelse return error.TestUnexpectedResult;
+    defer indexopts.deinit();
+    try std.testing.expectEqual(IndexOpts.Decrypt.auto, indexopts.getDecryptPolicy());
+
+    // Every policy value round-trips.
+    for ([_]IndexOpts.Decrypt{ .false, .true, .auto, .nostash }) |policy| {
+        try indexopts.setDecryptPolicy(policy);
+        try std.testing.expectEqual(policy, indexopts.getDecryptPolicy());
+    }
+
+    // Changing one options object does not change the database default.
+    const fresh = db.getDefaultIndexOpts() orelse return error.TestUnexpectedResult;
+    defer fresh.deinit();
+    try std.testing.expectEqual(IndexOpts.Decrypt.auto, fresh.getDecryptPolicy());
 }
 
 test {

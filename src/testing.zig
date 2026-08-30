@@ -11,6 +11,24 @@ const std = @import("std");
 const Database = @import("Database.zig");
 const helpers = @import("helpers.zig");
 const Message = @import("Message.zig");
+const TagsIterator = @import("TagsIterator.zig");
+
+/// Consume a tags iterator and report whether it yields `name`.
+pub fn hasTag(tags: *TagsIterator, name: []const u8) bool {
+    defer tags.deinit();
+    while (tags.next()) |tag| {
+        if (std.mem.eql(u8, tag, name)) return true;
+    }
+    return false;
+}
+
+/// Consume a tags iterator and count its entries.
+pub fn countTags(tags: *TagsIterator) usize {
+    defer tags.deinit();
+    var n: usize = 0;
+    while (tags.next()) |_| n += 1;
+    return n;
+}
 
 pub const CorpusMessage = struct {
     filename: []const u8,

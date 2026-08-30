@@ -142,6 +142,25 @@ pub fn getFilenames(self: *const Message) GetFilenamesError!FilenamesIterator {
     };
 }
 
+test getFilenames {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), try message.countFiles());
+    try std.testing.expect(std.mem.endsWith(u8, try message.getFilename(), "one.eml"));
+
+    var filenames = try message.getFilenames();
+    defer filenames.deinit();
+    var count: usize = 0;
+    while (filenames.next()) |_| count += 1;
+    try std.testing.expectEqual(@as(usize, 1), count);
+}
+
 /// Re-index the e-mail corresponding to `Message` using the supplied index
 /// options (or the database defaults when `indexopts` is `null`).
 ///
@@ -218,6 +237,23 @@ pub fn getHeader(self: *const Message, header: [:0]const u8) ?[:0]const u8 {
     return std.mem.span(c.notmuch_message_get_header(self.message, header) orelse return null);
 }
 
+test getHeader {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try std.testing.expectEqualStrings("one@example.org", message.getMessageID() orelse "");
+    try std.testing.expect(message.getThreadID() != null);
+    // Mon, 01 Apr 2024 09:00:00 +0000
+    try std.testing.expectEqual(@as(?i64, 1711962000), message.getDate());
+    try std.testing.expectEqualStrings("Alice <alice@example.org>", message.getHeader("From") orelse "");
+    try std.testing.expectEqualStrings("", message.getHeader("X-Nonexistent") orelse "missing");
+}
+
 /// Get the tags for `Message`, returning a `TagsIterator` object which can be
 /// used to iterate over all tags.
 ///
@@ -248,6 +284,31 @@ pub fn addTag(self: *const Message, tag: [:0]const u8) AddTagError!void {
         .read_only_database => error.ReadOnlyDatabase,
         else => error.Unexpected,
     };
+}
+
+test addTag {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addTag("foo");
+    try message.addTag("bar");
+    var tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 2), fixture.countTags(&tags));
+
+    try message.removeTag("foo");
+    tags = message.getTags();
+    try std.testing.expect(!fixture.hasTag(&tags, "foo"));
+    tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "bar"));
+
+    try message.removeAllTags();
+    tags = message.getTags();
+    try std.testing.expectEqual(@as(usize, 0), fixture.countTags(&tags));
 }
 
 pub const RemoveTagError = error{
@@ -323,6 +384,50 @@ pub fn maildirFlagsToTags(self: *const Message) Error!void {
     try wrap(c.notmuch_message_maildir_flags_to_tags(self.message));
 }
 
+test maildirFlagsToTags {
+    const fixture = @import("testing.zig");
+
+    const alloc = std.testing.allocator;
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    // A maildir file with the "flagged" flag set but not "seen".
+    try test_db.tmp.dir.writeFile(io, .{
+        .sub_path = "mail/cur/five:2,F",
+        .data =
+        \\From: Erin <erin@example.org>
+        \\To: Alice <alice@example.org>
+        \\Subject: Flagged mail
+        \\Date: Thu, 04 Apr 2024 10:00:00 +0000
+        \\Message-ID: <five@example.org>
+        \\
+        \\This one is flagged.
+        \\
+        ,
+    });
+
+    const root = db.getPath() orelse return error.TestUnexpectedResult;
+    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five:2,F" });
+    defer alloc.free(path);
+    const message = try db.indexFileGetMessage(path, null);
+    defer message.deinit();
+
+    try std.testing.expect(try message.hasMaildirFlag(.F));
+    try std.testing.expect(!try message.hasMaildirFlag(.S));
+    try std.testing.expect(!try message.hasMaildirFlag(.D));
+
+    try message.maildirFlagsToTags();
+
+    // F present adds "flagged"; S absent performs the opposite of removing
+    // "unread", i.e. adds it.
+    var tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "flagged"));
+    tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "unread"));
+}
+
 pub const HasMaildirFlagError = error{
     /// A Xapian exception occurred.
     XapianException,
@@ -374,6 +479,33 @@ pub fn tagsToMaildirFlags(self: *const Message) Error!void {
     try wrap(c.notmuch_message_tags_to_maildir_flags(self.message));
 }
 
+test tagsToMaildirFlags {
+    const fixture = @import("testing.zig");
+
+    const io = std.testing.io;
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const message = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addTag("flagged");
+    try message.addTag("passed");
+    // No "unread" tag, so the seen flag is set as well.
+    try message.tagsToMaildirFlags();
+
+    const filename = try message.getFilename();
+    try std.testing.expect(std.mem.endsWith(u8, filename, "one.eml:2,FPS"));
+    try std.testing.expect(try message.hasMaildirFlag(.F));
+    try std.testing.expect(try message.hasMaildirFlag(.P));
+    try std.testing.expect(try message.hasMaildirFlag(.S));
+
+    // The file was renamed on disk, not copied.
+    try test_db.tmp.dir.access(io, "mail/cur/one.eml:2,FPS", .{});
+    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, "mail/cur/one.eml", .{}));
+}
+
 /// Freeze the current state of `Message` within the database.
 ///
 /// This means that changes to the message state, (via `addTag`, `removeTag`,
@@ -405,6 +537,23 @@ pub fn tagsToMaildirFlags(self: *const Message) Error!void {
 /// tags if the interruption happened after `removeAllTags` but before `addTag`.
 pub fn freeze(self: *const Message) Error!void {
     try wrap(c.notmuch_message_freeze(self.message));
+}
+
+test freeze {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("two@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.freeze();
+    try message.addTag("frozen");
+    try message.thaw();
+
+    var tags = message.getTags();
+    try std.testing.expect(fixture.hasTag(&tags, "frozen"));
 }
 
 /// Thaw the current `Message`, synchronizing any changes that may have
@@ -463,6 +612,39 @@ pub fn addProperty(self: *const Message, key: [:0]const u8, value: [:0]const u8)
         .read_only_database => return error.ReadOnlyDatabase,
         else => error.Unexpected,
     };
+}
+
+test addProperty {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
+    defer message.deinit();
+
+    try message.addProperty("test.key", "value1");
+    try message.addProperty("test.key", "value2");
+    try std.testing.expectEqualStrings(
+        "value1",
+        message.getProperty("test.key") orelse return error.TestUnexpectedResult,
+    );
+    try std.testing.expectEqual(@as(usize, 2), try message.countProperties("test.key"));
+
+    var properties = message.getProperties("test.key", true);
+    defer properties.deinit();
+    var count: usize = 0;
+    while (properties.next()) |kv| {
+        try std.testing.expectEqualStrings("test.key", kv.key);
+        count += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), count);
+
+    try message.removeProperty("test.key", "value1");
+    try std.testing.expectEqual(@as(usize, 1), try message.countProperties("test.key"));
+
+    try message.removeAllProperties(null);
+    try std.testing.expectEqual(@as(usize, 0), try message.countProperties("test.key"));
 }
 
 pub const RemovePropertyError = error{

@@ -99,6 +99,32 @@ pub fn addTagExclude(self: *const Query, tag: [:0]const u8) AddTagExcludeError!v
     };
 }
 
+test addTagExclude {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+    const db = test_db.database;
+
+    const spam = try db.findMessage("three@example.org") orelse return error.TestUnexpectedResult;
+    defer spam.deinit();
+    try spam.addTag("spam");
+
+    const query = try db.queryCreate("*");
+    defer query.deinit();
+    try query.addTagExclude("spam");
+    query.setOmitExcluded(.true);
+
+    var messages = try query.searchMessages();
+    defer messages.deinit();
+    var count: usize = 0;
+    while (try messages.next()) |message| {
+        defer message.deinit();
+        count += 1;
+    }
+    try std.testing.expectEqual(fixture.corpus.len - 1, count);
+}
+
 /// Execute a query for threads, returning a `ThreadsIterator` object which can
 /// be used to iterate over the results. The returned threads object is owned by
 /// the query and as such, will only be valid until `Query.deinit`.
@@ -165,6 +191,30 @@ pub fn searchMessages(self: *const Query) Error!MessagesIterator {
     };
 }
 
+test searchMessages {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("*");
+    defer query.deinit();
+
+    query.setSort(.oldest_first);
+    var oldest = try query.searchMessages();
+    defer oldest.deinit();
+    const first = try oldest.next() orelse return error.TestUnexpectedResult;
+    defer first.deinit();
+    try std.testing.expectEqualStrings("Lunch plans", first.getHeader("Subject") orelse "");
+
+    query.setSort(.newest_first);
+    var newest = try query.searchMessages();
+    defer newest.deinit();
+    const last = try newest.next() orelse return error.TestUnexpectedResult;
+    defer last.deinit();
+    try std.testing.expectEqualStrings("Zig bindings", last.getHeader("Subject") orelse "");
+}
+
 pub const CountMessagesError = error{
     /// Syntax error in the query (returned for s-expression queries, whose
     /// parsing is deferred until the query runs).
@@ -187,6 +237,18 @@ pub fn countMessages(self: *const Query) CountMessagesError!u32 {
         .xapian_exception => error.XapianException,
         else => error.Unexpected,
     };
+}
+
+test countMessages {
+    const fixture = @import("testing.zig");
+
+    var test_db = try fixture.corpusDatabase();
+    defer test_db.deinit();
+
+    const query = try test_db.database.queryCreate("from:carol@example.org");
+    defer query.deinit();
+    try std.testing.expectEqual(@as(u32, 1), try query.countMessages());
+    try std.testing.expectEqual(@as(u32, 1), try query.countThreads());
 }
 
 pub const CountThreadsError = error{
