@@ -132,6 +132,15 @@ pub const Decrypt = enum(u2) {
 /// FALSE/TRUE options correspond to the new `.flag`/`.true` options.
 pub const Exclude = generateEnum("NOTMUCH_EXCLUDE_", &.{});
 
+test Exclude {
+    // The backward-compatible ordering: the old FALSE/TRUE values 0 and 1
+    // correspond to .flag and .true, not to .false and .true.
+    try std.testing.expectEqual(0, @intFromEnum(Exclude.flag));
+    try std.testing.expectEqual(1, @intFromEnum(Exclude.true));
+    try std.testing.expectEqual(2, @intFromEnum(Exclude.false));
+    try std.testing.expectEqual(3, @intFromEnum(Exclude.all));
+}
+
 pub const MessageFlag = enum(u2) {
     match = c.NOTMUCH_MESSAGE_FLAG_MATCH,
     excluded = c.NOTMUCH_MESSAGE_FLAG_EXCLUDED,
@@ -163,11 +172,32 @@ pub const MaildirFlag = enum(u8) {
     S = 'S',
 };
 
+test MaildirFlag {
+    // The enum values are the flag characters from the maildir ":2," info
+    // part of a filename.
+    try std.testing.expectEqual('F', @intFromEnum(MaildirFlag.F));
+    try std.testing.expectEqual('S', @intFromEnum(MaildirFlag.S));
+}
+
 /// query syntax
 pub const QuerySyntax = generateEnum("NOTMUCH_QUERY_SYNTAX_", &.{});
 
+test QuerySyntax {
+    // Generated from the C constants, with lowercased field names.
+    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_XAPIAN, @intFromEnum(QuerySyntax.xapian));
+    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_SEXP, @intFromEnum(QuerySyntax.sexp));
+}
+
 /// Sort values for notmuch_query_set_sort.
 pub const Sort = generateEnum("NOTMUCH_SORT_", &.{});
+
+test Sort {
+    // Generated from the C constants, with lowercased field names.
+    try std.testing.expectEqual(c.NOTMUCH_SORT_OLDEST_FIRST, @intFromEnum(Sort.oldest_first));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_NEWEST_FIRST, @intFromEnum(Sort.newest_first));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_MESSAGE_ID, @intFromEnum(Sort.message_id));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_UNSORTED, @intFromEnum(Sort.unsorted));
+}
 
 /// Status codes used for the return values of most functions.
 pub const Status = enum(u5) {
@@ -268,4 +298,10 @@ pub const Status = enum(u5) {
 /// Convenience function to convert a notmuch API return code to a Status enum.
 pub fn status(rc: c.notmuch_status_t) Status {
     return .init(rc);
+}
+
+test status {
+    try std.testing.expectEqual(Status.success, status(c.NOTMUCH_STATUS_SUCCESS));
+    try std.testing.expectEqual(Status.read_only_database, status(c.NOTMUCH_STATUS_READ_ONLY_DATABASE));
+    try std.testing.expectEqual(Status.closed_database, status(c.NOTMUCH_STATUS_CLOSED_DATABASE));
 }
