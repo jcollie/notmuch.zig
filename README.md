@@ -41,7 +41,7 @@ $ export NOTMUCH_INCLUDE=/usr/include
 Add the package to your project:
 
 ```console
-$ zig fetch --save git+https://git.ocjtech.us/jeff/notmuch.zig#main
+$ zig fetch --save git+https://git.jcollie.dev/jeff/notmuch.zig#main
 ```
 
 Then wire the module up in your `build.zig`:
@@ -56,6 +56,18 @@ exe.root_module.addImport("notmuch", notmuch.module("notmuch"));
 ```
 
 The module links `libnotmuch` and libc itself, so there is nothing else to add.
+
+## Where this lives
+
+The repository is hosted on Forgejo at
+<https://git.jcollie.dev/jeff/notmuch.zig>, and mirrored on
+[Tangled](https://tangled.org/jcollie.dev/notmuch.zig), on
+[GitHub](https://github.com/jcollie/notmuch.zig), and on Radicle, which the
+next section covers.
+
+```console
+$ git clone https://git.jcollie.dev/jeff/notmuch.zig.git
+```
 
 ## Cloning with Radicle
 
@@ -177,7 +189,7 @@ defer allocator.free(content);
 | `notmuch.helpers.MessageWriter`, `notmuch.helpers.MessageReader` | streaming an email through a `std.Io.Writer` into the mail store and indexing it, and reading a message's raw content through a `std.Io.Reader` (conveniences unique to these bindings) |
 
 Full API documentation is generated from the source and published at
-<https://notmuch-zig.ocjtech.us>. To read it locally instead:
+<https://jeff.jcollie.page/notmuch.zig/>. To read it locally instead:
 
 ```console
 $ zig build docs
