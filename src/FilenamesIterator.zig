@@ -41,7 +41,7 @@ test next {
     var filenames = try message.getFilenames();
     defer filenames.deinit();
     const filename = filenames.next() orelse return error.TestUnexpectedResult;
-    try std.testing.expect(std.mem.endsWith(u8, filename, "one.eml"));
+    try std.testing.expect(std.mem.endsWith(u8, filename, test_db.filename(0)));
     try std.testing.expect(filenames.next() == null);
 }
 

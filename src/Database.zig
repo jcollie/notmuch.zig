@@ -913,10 +913,10 @@ test getDirectory {
     const db = test_db.database;
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
 
-    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    const directory = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
     defer directory.deinit();
 
     try std.testing.expectEqual(@as(?i64, null), directory.getMtime());
@@ -998,15 +998,13 @@ pub fn indexFile(self: *const Database, filename: [:0]const u8, indexopts: ?Inde
 test indexFile {
     const fixture = @import("testing.zig");
     const alloc = std.testing.allocator;
-    const io = std.testing.io;
 
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
     const db = test_db.database;
 
-    try test_db.tmp.dir.writeFile(io, .{
-        .sub_path = "mail/cur/five.eml",
-        .data =
+    // Delivered into the mail store, but not yet known to the database.
+    const delivered = try test_db.deliver(
         \\From: Erin <erin@example.org>
         \\To: Alice <alice@example.org>
         \\Subject: Indexed by hand
@@ -1015,11 +1013,9 @@ test indexFile {
         \\
         \\Indexed with Database.indexFile.
         \\
-        ,
-    });
+    , .{});
 
-    const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five.eml" });
+    const path = try test_db.pathOf(&delivered);
     defer alloc.free(path);
 
     try db.indexFile(path, null);
@@ -1031,9 +1027,9 @@ test indexFile {
     // duplicates are not an error.
     try db.indexFile(path, null);
 
-    // A file that is not an email is rejected.
-    try test_db.tmp.dir.writeFile(io, .{ .sub_path = "mail/cur/junk", .data = "" });
-    const junk_path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "junk" });
+    // A file in the mail store that is not an email is rejected.
+    const junk = try test_db.deliver("", .{});
+    const junk_path = try test_db.pathOf(&junk);
     defer alloc.free(junk_path);
     try std.testing.expectError(error.FileNotEmail, db.indexFile(junk_path, null));
 
@@ -1100,13 +1096,10 @@ test indexFileGetMessage {
     const fixture = @import("testing.zig");
 
     const alloc = std.testing.allocator;
-    const io = std.testing.io;
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
 
-    try test_db.tmp.dir.writeFile(io, .{
-        .sub_path = "mail/cur/five.eml",
-        .data =
+    const delivered = try test_db.deliver(
         \\From: Erin <erin@example.org>
         \\To: Alice <alice@example.org>
         \\Subject: One more thing
@@ -1115,11 +1108,9 @@ test indexFileGetMessage {
         \\
         \\Just one more thing.
         \\
-        ,
-    });
+    , .{});
 
-    const root = test_db.database.getPath() orelse return error.TestUnexpectedResult;
-    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five.eml" });
+    const path = try test_db.pathOf(&delivered);
     defer alloc.free(path);
 
     const message = try test_db.database.indexFileGetMessage(path, null);
@@ -1175,21 +1166,17 @@ test removeMessage {
     const fixture = @import("testing.zig");
 
     const alloc = std.testing.allocator;
-    const io = std.testing.io;
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
     const db = test_db.database;
 
-    // Index a second file carrying the same Message-ID as one.eml.
-    try test_db.tmp.dir.writeFile(io, .{
-        .sub_path = "mail/cur/one-copy.eml",
-        .data = fixture.corpus[0].data,
-    });
+    // Deliver and index a second copy of the first corpus message: same
+    // Message-ID, a name of its own, since a maildir never reuses one.
+    const duplicate = try test_db.deliver(fixture.corpus[0].data, .{});
 
-    const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const original = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one.eml" });
+    const original = try test_db.path(0);
     defer alloc.free(original);
-    const copy = try std.fs.path.joinZ(alloc, &.{ root, "cur", "one-copy.eml" });
+    const copy = try test_db.pathOf(&duplicate);
     defer alloc.free(copy);
 
     try db.indexFile(copy, null);
@@ -1204,7 +1191,7 @@ test removeMessage {
     const remaining = try db.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
     defer remaining.deinit();
     try std.testing.expectEqual(@as(usize, 1), try remaining.countFiles());
-    try std.testing.expect(std.mem.endsWith(u8, try remaining.getFilename(), "one-copy.eml"));
+    try std.testing.expect(std.mem.endsWith(u8, try remaining.getFilename(), duplicate.filename()));
 
     // Removing the last filename removes the message content. Because
     // two@example.org references this message ID, notmuch keeps it as a
@@ -1297,22 +1284,22 @@ test findMessageByFilename {
     defer test_db.deinit();
     const db = test_db.database;
 
-    const root = db.getPath() orelse return error.TestUnexpectedResult;
-
     // Lookup by absolute filename.
-    const abs = try std.fs.path.joinZ(alloc, &.{ root, "cur", "two.eml" });
+    const abs = try test_db.path(1);
     defer alloc.free(abs);
     const by_abs = try db.findMessageByFilename(abs) orelse return error.TestUnexpectedResult;
     defer by_abs.deinit();
     try std.testing.expectEqualStrings("two@example.org", by_abs.getMessageID() orelse "");
 
     // Lookup by filename relative to the database path.
-    const by_rel = try db.findMessageByFilename("cur/two.eml") orelse return error.TestUnexpectedResult;
+    const rel = try std.fs.path.joinZ(alloc, &.{ "new", test_db.filename(1) });
+    defer alloc.free(rel);
+    const by_rel = try db.findMessageByFilename(rel) orelse return error.TestUnexpectedResult;
     defer by_rel.deinit();
     try std.testing.expectEqualStrings("two@example.org", by_rel.getMessageID() orelse "");
 
     // Unknown filenames return null.
-    try std.testing.expectEqual(@as(?Message, null), try db.findMessageByFilename("cur/missing.eml"));
+    try std.testing.expectEqual(@as(?Message, null), try db.findMessageByFilename("new/missing"));
 
     // A closed database reports a Xapian exception.
     try db.close();

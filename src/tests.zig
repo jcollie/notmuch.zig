@@ -52,8 +52,7 @@ test "Database message lookup and removal" {
 
     try std.testing.expectEqual(@as(?notmuch.Message, null), try db.findMessage("missing@example.org"));
 
-    const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "three.eml" });
+    const path = try test_db.path(2);
     defer alloc.free(path);
 
     const message = try db.findMessageByFilename(path) orelse return error.TestUnexpectedResult;

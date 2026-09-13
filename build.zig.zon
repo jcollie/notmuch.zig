@@ -7,7 +7,12 @@
     .fingerprint = 0x25da472dbcafbfc8,
     .minimum_zig_version = "0.16.0-dev.2682+02142a54d",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .zig_maildir = .{
+            .url = "git+https://git.jcollie.dev/jeff/zig-maildir.git#b9b9fd4a0159d159169fdc03b2ec326b7abfa54b",
+            .hash = "zig_maildir-0.0.0-C35R-dGYAwBAV9x3bRgvq5MvFwuw02XN0g5j-uWcGecb",
+        },
+    },
 
     .paths = .{
         "build.zig",

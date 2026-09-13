@@ -26,6 +26,11 @@ pub const Error = @import("error.zig").Error;
 pub const FilenamesIterator = @import("FilenamesIterator.zig");
 pub const helpers = @import("helpers.zig");
 pub const IndexOpts = @import("IndexOpts.zig");
+/// The maildir library the helpers deliver mail through:
+/// <https://git.jcollie.dev/jeff/zig-maildir>. Re-exported so that a caller
+/// can name the types `helpers.MessageWriter` takes — a delivery destination
+/// and the maildir flags that go with it — without depending on it directly.
+pub const maildir = @import("maildir");
 pub const Message = @import("Message.zig");
 pub const MessagesIterator = @import("MessagesIterator.zig");
 pub const PairsIterator = @import("PairsIterator.zig");
@@ -64,6 +69,7 @@ test compact {
     // take the paths from the fixture, then destroy its handle first.
     var test_db = try fixture.corpusDatabase();
     defer test_db.tmp.cleanup();
+    defer test_db.mailbox.close(io);
     const root = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
     defer alloc.free(root);
     const backup_path = try std.fs.path.joinZ(alloc, &.{

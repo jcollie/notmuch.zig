@@ -8,6 +8,8 @@
 
 const std = @import("std");
 
+const maildir = @import("maildir");
+
 const Database = @import("Database.zig");
 const IndexOpts = @import("IndexOpts.zig");
 const Message = @import("Message.zig");
@@ -62,113 +64,124 @@ test MessageReader {
     try std.testing.expectEqualStrings(fixture.corpus[0].data, content);
 }
 
-/// The maildir subdirectory a message is delivered into.
-pub const Subdir = enum {
-    /// Mail that has not yet been seen by the user.
-    new,
-    /// Mail the user has already seen. Files delivered here carry an empty
-    /// `:2,` maildir info suffix, ready for flag synchronization.
-    cur,
-};
+/// Where a message being written is delivered: `new`, for mail nobody has
+/// looked at, or `cur` with the maildir flags it already carries — which is
+/// what an IMAP `APPEND` of an already-read message, or a client saving a
+/// draft, does.
+pub const Destination = maildir.Maildir.Destination;
 
 pub const Options = struct {
-    /// Which maildir subdirectory the message is delivered into.
-    subdir: Subdir = .new,
+    /// Which maildir directory the message is delivered into, and with what
+    /// flags.
+    to: Destination = .new,
+    /// Append `,S=<bytes>` to the delivered name, so that the size can be
+    /// had from a directory listing rather than a `stat`.
+    record_size: bool = true,
+    /// Ask the filesystem to put the message on the disk before it is named
+    /// in `new` or `cur`. Costs a round trip to the storage per delivery;
+    /// without it a crash can leave a file that exists and is empty, which is
+    /// worse than a message that never arrived.
+    sync: bool = true,
 };
+
+fn deliverOptions(options: Options) maildir.Maildir.DeliverOptions {
+    return .{
+        .to = options.to,
+        .record_size = options.record_size,
+        .sync = options.sync,
+    };
+}
 
 /// Streams an email into a notmuch database: the message is composed through
 /// a `std.Io.Writer` into the mail store, then indexed.
 ///
-/// A unique maildir filename is generated for the message — prefixed with
-/// the current time so that filenames sort in arrival order, like those
-/// written by notmuch insert — and delivered into the mail root's `new` or
-/// `cur` subdirectory according to `Options.subdir`. The message is written through `std.Io.File.Atomic`, so
-/// no partially written file is ever visible in the mail store: the email
-/// accumulates in an unnamed ephemeral file and is atomically materialized
-/// by `finish` before indexing. `cancel` discards it without a trace.
+/// The delivery itself is [zig-maildir](https://git.jcollie.dev/jeff/zig-maildir)'s
+/// — notmuch indexes a maildir but does not write one — which means the whole
+/// protocol rather than an approximation of it: the message is written into
+/// the mail root's `tmp` under a name nothing else will invent, synced, and
+/// renamed into `new` or `cur` once it is whole. A reader of the mail store
+/// therefore never sees a partial message, and `cancel` removes the
+/// half-written file without a trace.
+///
+/// The database's path must be a maildir — `tmp`, `new` and `cur` — or `init`
+/// fails with `error.NotAMaildir` rather than delivering somewhere unsafe.
 ///
 /// `buffer` is caller-owned and must remain valid until `finish` or `cancel`
-/// is called.
+/// is called. The `MessageWriter` must not be moved after `writer` has been
+/// called, because what `writer` returns points into it.
 pub const MessageWriter = struct {
     database: Database,
-    dir: std.Io.Dir,
-    atomic: std.Io.File.Atomic,
-    file_writer: std.Io.File.Writer,
-    subdir: Subdir,
-    name_buf: [name_capacity]u8,
-    name_len: usize,
-
-    const name_capacity = 64;
+    /// The mail store, opened on the database's path and closed by `finish`
+    /// or `cancel`.
+    mailbox: maildir.Maildir,
+    /// The message being written into `tmp`. Not a message in the mail store
+    /// until it is committed.
+    delivery: maildir.Maildir.Delivery,
+    options: Options,
+    io: std.Io,
+    buffer: []u8,
 
     /// Prepare to stream an email into the database's mail store. Writes are
-    /// buffered through `buffer`.
+    /// buffered through `buffer`; nothing is written to the file until
+    /// `writer` is called.
     pub fn init(io: std.Io, database: Database, buffer: []u8, options: Options) !MessageWriter {
         const root = database.getPath() orelse return error.NoDatabasePath;
 
-        var mw: MessageWriter = undefined;
-        mw.database = database;
-        mw.subdir = options.subdir;
-
-        const suffix: []const u8 = switch (options.subdir) {
-            .new => "",
-            .cur => ":2,",
+        var mw: MessageWriter = .{
+            .database = database,
+            .mailbox = try maildir.Maildir.open(.cwd(), io, root, .{}),
+            .delivery = undefined,
+            .options = options,
+            .io = io,
+            .buffer = buffer,
         };
-        var random_bytes: [8]u8 = undefined;
-        io.random(&random_bytes);
-        const micros = std.Io.Timestamp.now(io, .real).toMicroseconds();
-        // Lead with the delivery time, like notmuch insert's
-        // <seconds>.M<microseconds>P<pid>.<hostname> names, so that sorting
-        // new/ by filename approximates arrival order.
-        const name = std.fmt.bufPrint(&mw.name_buf, "{d}.M{d}R{x:0>16}.notmuch-zig{s}", .{
-            @divTrunc(micros, std.time.us_per_s),
-            @mod(micros, std.time.us_per_s),
-            std.mem.readInt(u64, &random_bytes, .big),
-            suffix,
-        }) catch unreachable;
-        mw.name_len = name.len;
+        errdefer mw.mailbox.close(io);
 
-        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const dir_path = std.fmt.bufPrint(&path_buf, "{s}/{t}", .{ root, options.subdir }) catch
-            return error.NameTooLong;
-        mw.dir = try std.Io.Dir.openDirAbsolute(io, dir_path, .{});
-        errdefer mw.dir.close(io);
-        mw.atomic = try mw.dir.createFileAtomic(io, name, .{});
-        mw.file_writer = mw.atomic.file.writer(io, buffer);
+        mw.delivery = try mw.mailbox.beginDelivery(io, deliverOptions(options).attempts);
         return mw;
     }
 
     /// The `std.Io.Writer` to compose the email into.
+    ///
+    /// The returned pointer is invalidated by moving the `MessageWriter`, and
+    /// by `finish` and `cancel`.
     pub fn writer(self: *MessageWriter) *std.Io.Writer {
-        return &self.file_writer.interface;
+        // The delivery keeps a pointer to the maildir it will be renamed
+        // within, and both live in this struct, which the caller is free to
+        // move until the writer below hands out a pointer into it.
+        self.delivery.maildir = &self.mailbox;
+        if (self.delivery.file_writer == null) return self.delivery.writer(self.io, self.buffer);
+        return &self.delivery.file_writer.?.interface;
     }
 
-    /// The generated maildir filename (the basename only) the message will
-    /// be delivered under.
+    /// The name the message currently has in the mail store's `tmp`
+    /// directory, which is also the identity — `maildir.Name.base` — of the
+    /// name it is delivered under: committing the delivery appends the size
+    /// and the maildir info part, and changes nothing before them.
     ///
     /// The returned slice points into the writer and is invalidated by
     /// `finish` and `cancel`; copy it if it is needed afterwards. After a
     /// successful `finish`, `Message.getFilename` on the returned message
     /// reports the full delivered path.
-    pub fn filename(self: *const MessageWriter) []const u8 {
-        return self.name_buf[0..self.name_len];
+    pub fn tempName(self: *const MessageWriter) []const u8 {
+        return self.delivery.tempName();
     }
 
-    test filename {
+    test tempName {
         const fixture = @import("testing.zig");
 
         var test_db = try fixture.corpusDatabase();
         defer test_db.deinit();
-        var buffer: [256]u8 = undefined;
 
-        // The generated name leads with the delivery timestamp so filenames
-        // sort by arrival, like those written by notmuch insert.
-        var mw = try MessageWriter.init(std.testing.io, test_db.database, &buffer, .{});
-        try std.testing.expect(std.ascii.isDigit(mw.filename()[0]));
-        try std.testing.expect(std.mem.indexOf(u8, mw.filename(), ".M") != null);
+        // The temporary name leads with the delivery time, so names sort by
+        // arrival, and ends with the host that wrote it.
+        var mw = try test_db.newMessage(.{});
+        try std.testing.expect(std.ascii.isDigit(mw.tempName()[0]));
+        try std.testing.expect(std.mem.indexOf(u8, mw.tempName(), ".M") != null);
 
-        var name_buf: [name_capacity]u8 = undefined;
-        const name = name_buf[0..mw.filename().len];
-        @memcpy(name, mw.filename());
+        var name_buf: maildir.Maildir.NameBuffer = undefined;
+        const name = name_buf[0..mw.tempName().len];
+        @memcpy(name, mw.tempName());
 
         try mw.writer().writeAll(
             \\From: Ivan <ivan@example.org>
@@ -180,43 +193,54 @@ pub const MessageWriter = struct {
             \\Short.
             \\
         );
-        const message = try mw.finish(null);
+        const message = try mw.finish();
         defer message.deinit();
 
-        // The indexed message was delivered under exactly that name.
-        try std.testing.expectEqualStrings(name, std.fs.path.basename(try message.getFilename()));
+        // The delivered name is that one with the size appended: same
+        // message, and the identity a maildir reader keys on is unchanged.
+        const delivered = std.fs.path.basename(try message.getFilename());
+        const parsed: maildir.Name = .parse(delivered, maildir.Name.default_separator);
+        try std.testing.expectEqualStrings(name, parsed.base());
+        try std.testing.expect(parsed.size() != null);
     }
 
-    /// Flush the email, atomically materialize it in the mail store, index
-    /// it into the database, and return the indexed message. The caller owns
-    /// the returned message. The database must be open in read-write mode.
+    /// Flush the email, deliver it into the mail store, index it into the
+    /// database, and return the indexed message. The caller owns the returned
+    /// message. The database must be open in read-write mode.
+    ///
+    /// A failure before the delivery is committed leaves nothing behind; a
+    /// failure to index one that has been leaves the message in the mail
+    /// store, where the next `notmuch new` will find it.
     pub fn finish(self: *MessageWriter, indexopts: ?IndexOpts) !Message {
-        const io = self.file_writer.io;
+        const io = self.io;
+        // The struct may have moved since init, so re-point the delivery at
+        // the maildir it is being renamed within.
+        self.delivery.maildir = &self.mailbox;
         defer {
-            self.atomic.deinit(io);
-            self.dir.close(io);
+            self.mailbox.close(io);
             self.* = undefined;
         }
-        try self.file_writer.interface.flush();
 
-        // The struct (and the name buffer inside it) may have moved since
-        // init, so re-point the atomic file's destination before linking.
-        self.atomic.dest_sub_path = self.filename();
-        try self.atomic.link(io);
+        const delivered = try self.delivery.commit(io, deliverOptions(self.options));
 
         const root = self.database.getPath() orelse return error.NoDatabasePath;
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const path = std.fmt.bufPrintZ(&path_buf, "{s}/{t}/{s}", .{ root, self.subdir, self.filename() }) catch
-            return error.NameTooLong;
+        const path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}/{s}", .{
+            root,
+            delivered.subdir.dirname(),
+            delivered.filename(),
+        }) catch return error.NameTooLong;
         return self.database.indexFileGetMessage(path, indexopts);
     }
 
-    /// Discard the partially written email without indexing it. Nothing ever
-    /// appears in the mail store.
+    /// Discard the partially written email without delivering or indexing it.
+    /// Nothing ever appears in `new` or `cur`, and the file in `tmp` is
+    /// removed.
     pub fn cancel(self: *MessageWriter) void {
-        const io = self.file_writer.io;
-        self.atomic.deinit(io);
-        self.dir.close(io);
+        const io = self.io;
+        self.delivery.maildir = &self.mailbox;
+        self.delivery.abort(io);
+        self.mailbox.close(io);
         self.* = undefined;
     }
 
@@ -226,29 +250,32 @@ pub const MessageWriter = struct {
 
         var test_db = try fixture.corpusDatabase();
         defer test_db.deinit();
-        var buffer: [256]u8 = undefined;
 
-        // A cancelled message leaves nothing behind at its destination.
-        var mw = try MessageWriter.init(io, test_db.database, &buffer, .{ .subdir = .new });
+        // A cancelled message leaves nothing behind — not in `new`, where it
+        // was headed, and not in `tmp`, where it was written.
+        var mw = try test_db.newMessage(.{ .to = .new });
         try mw.writer().writeAll("From: partial <partial@example.org>\n");
-        var path_buf: [128]u8 = undefined;
-        const path = try std.fmt.bufPrint(&path_buf, "mail/new/{s}", .{mw.filename()});
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path = try std.fmt.bufPrint(&path_buf, "mail/tmp/{s}", .{mw.tempName()});
         mw.cancel();
         try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, path, .{}));
+
+        // Nothing arrived: `new` still holds exactly the corpus.
+        var it = test_db.mailbox.iterate(.new);
+        var count: usize = 0;
+        while (try it.next(io)) |_| count += 1;
+        try std.testing.expectEqual(fixture.corpus.len, count);
     }
 };
 
 test MessageWriter {
     const fixture = @import("testing.zig");
 
-    const io = std.testing.io;
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
-    const db = test_db.database;
-    var buffer: [256]u8 = undefined;
 
-    // A finished message is materialized in new/ and indexed.
-    var finished = try MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
+    // A finished message is delivered into new/ and indexed.
+    var finished = try test_db.newMessage(.{ .to = .new });
     try finished.writer().writeAll(
         \\From: Grace <grace@example.org>
         \\To: Alice <alice@example.org>
@@ -259,13 +286,13 @@ test MessageWriter {
         \\Materialized atomically.
         \\
     );
-    const message = try finished.finish(null);
+    const message = try finished.finish();
     defer message.deinit();
     try std.testing.expectEqualStrings("seven@example.org", message.getMessageID() orelse "");
     try std.testing.expect(std.mem.indexOf(u8, try message.getFilename(), "/new/") != null);
 
-    // Delivery into cur/ carries an empty maildir info suffix.
-    var seen = try MessageWriter.init(io, db, &buffer, .{ .subdir = .cur });
+    // Delivery into cur/ carries the maildir flags it was given.
+    var seen = try test_db.newMessage(.{ .to = .{ .cur = .{ .seen = true } } });
     try seen.writer().writeAll(
         \\From: Heidi <heidi@example.org>
         \\To: Alice <alice@example.org>
@@ -276,9 +303,12 @@ test MessageWriter {
         \\Delivered as seen mail.
         \\
     );
-    const seen_message = try seen.finish(null);
+    const seen_message = try seen.finish();
     defer seen_message.deinit();
     const seen_filename = try seen_message.getFilename();
     try std.testing.expect(std.mem.indexOf(u8, seen_filename, "/cur/") != null);
-    try std.testing.expect(std.mem.endsWith(u8, seen_filename, ":2,"));
+    try std.testing.expect(std.mem.endsWith(u8, seen_filename, ":2,S"));
+
+    // ...which notmuch reads back as the flag it is.
+    try std.testing.expect(try seen_message.hasMaildirFlag(.S));
 }

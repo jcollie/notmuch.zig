@@ -138,7 +138,7 @@ test "every wrapper body compiles" {
     var message_writer: notmuch.helpers.MessageWriter = undefined;
     message_writer = try notmuch.helpers.MessageWriter.init(undefined, db, &.{}, .{});
     _ = message_writer.writer();
-    _ = message_writer.filename();
+    _ = message_writer.tempName();
     _ = try message_writer.finish(null);
     message_writer.cancel();
 

@@ -16,6 +16,15 @@ pub fn build(b: *std.Build) void {
     if (b.graph.environ_map.get("NOTMUCH_INCLUDE")) |path|
         notmuch_c.addIncludePath(.{ .cwd_relative = path });
 
+    // Maildirs, which notmuch indexes but does not write:
+    // <https://git.jcollie.dev/jeff/zig-maildir>. The helpers and the test
+    // fixture deliver mail through it rather than inventing filenames and
+    // rename dances of their own.
+    const zig_maildir = b.dependency("zig_maildir", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const notmuch_zig = b.addModule("notmuch", .{
         .root_source_file = b.path("src/notmuch.zig"),
         .target = target,
@@ -23,6 +32,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     notmuch_zig.addImport("c", notmuch_c.createModule());
+    notmuch_zig.addImport("maildir", zig_maildir.module("maildir"));
     notmuch_zig.linkSystemLibrary("notmuch", .{});
 
     const tests = b.addTest(.{

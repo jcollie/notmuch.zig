@@ -222,7 +222,7 @@ test getFilename {
 
     const filename = try message.getFilename();
     try std.testing.expect(std.fs.path.isAbsolute(filename));
-    try std.testing.expectEqualStrings("one.eml", std.fs.path.basename(filename));
+    try std.testing.expectEqualStrings(test_db.filename(0), std.fs.path.basename(filename));
 }
 
 pub const GetFilenamesError = error{
@@ -256,7 +256,7 @@ test getFilenames {
     defer message.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), try message.countFiles());
-    try std.testing.expect(std.mem.endsWith(u8, try message.getFilename(), "one.eml"));
+    try std.testing.expect(std.mem.endsWith(u8, try message.getFilename(), test_db.filename(0)));
 
     var filenames = try message.getFilenames();
     defer filenames.deinit();
@@ -595,15 +595,13 @@ test maildirFlagsToTags {
     const fixture = @import("testing.zig");
 
     const alloc = std.testing.allocator;
-    const io = std.testing.io;
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
     const db = test_db.database;
 
-    // A maildir file with the "flagged" flag set but not "seen".
-    try test_db.tmp.dir.writeFile(io, .{
-        .sub_path = "mail/cur/five:2,F",
-        .data =
+    // A message delivered straight into cur/ with the "flagged" flag set but
+    // not "seen" — what a client saving an already-marked message does.
+    const delivered = try test_db.deliver(
         \\From: Erin <erin@example.org>
         \\To: Alice <alice@example.org>
         \\Subject: Flagged mail
@@ -612,11 +610,9 @@ test maildirFlagsToTags {
         \\
         \\This one is flagged.
         \\
-        ,
-    });
+    , .{ .to = .{ .cur = .{ .flagged = true } } });
 
-    const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const path = try std.fs.path.joinZ(alloc, &.{ root, "cur", "five:2,F" });
+    const path = try test_db.pathOf(&delivered);
     defer alloc.free(path);
     const message = try db.indexFileGetMessage(path, null);
     defer message.deinit();
@@ -662,8 +658,8 @@ test hasMaildirFlag {
     const message = try test_db.database.findMessage("one@example.org") orelse return error.TestUnexpectedResult;
     defer message.deinit();
 
-    // The corpus filenames carry no ":2," maildir info part, so no flag is
-    // set.
+    // The corpus is delivered into new/, where a name has no ":2," maildir
+    // info part to carry a flag — which is what makes it new.
     try std.testing.expect(!try message.hasMaildirFlag(.S));
     try std.testing.expect(!try message.hasMaildirFlag(.F));
 }
@@ -704,6 +700,7 @@ pub fn tagsToMaildirFlags(self: *const Message) Error!void {
 test tagsToMaildirFlags {
     const fixture = @import("testing.zig");
 
+    const alloc = std.testing.allocator;
     const io = std.testing.io;
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
@@ -717,15 +714,32 @@ test tagsToMaildirFlags {
     // No "unread" tag, so the seen flag is set as well.
     try message.tagsToMaildirFlags();
 
+    // The corpus message was delivered into new/, which has nowhere to write
+    // a flag, so notmuch moved it into cur/ and appended the info part to the
+    // name it arrived under.
+    const flagged_name = try std.fmt.allocPrint(alloc, "{s}:2,FPS", .{test_db.filename(0)});
+    defer alloc.free(flagged_name);
     const filename = try message.getFilename();
-    try std.testing.expect(std.mem.endsWith(u8, filename, "one.eml:2,FPS"));
+    try std.testing.expect(std.mem.endsWith(u8, filename, flagged_name));
     try std.testing.expect(try message.hasMaildirFlag(.F));
     try std.testing.expect(try message.hasMaildirFlag(.P));
     try std.testing.expect(try message.hasMaildirFlag(.S));
 
     // The file was renamed on disk, not copied.
-    try test_db.tmp.dir.access(io, "mail/cur/one.eml:2,FPS", .{});
-    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, "mail/cur/one.eml", .{}));
+    const in_cur = try std.fs.path.join(alloc, &.{ "mail", "cur", flagged_name });
+    defer alloc.free(in_cur);
+    try test_db.tmp.dir.access(io, in_cur, .{});
+    const in_new = try std.fs.path.join(alloc, &.{ "mail", "new", test_db.filename(0) });
+    defer alloc.free(in_new);
+    try std.testing.expectError(error.FileNotFound, test_db.tmp.dir.access(io, in_new, .{}));
+
+    // The message kept the identity it was delivered under, so a maildir
+    // reader still finds it — and reads back the flags notmuch wrote.
+    var moved = try test_db.mailbox.find(io, test_db.delivered[0].id()) orelse
+        return error.TestUnexpectedResult;
+    try std.testing.expect(moved.subdir == .cur);
+    const flags = moved.flags();
+    try std.testing.expect(flags.flagged and flags.passed and flags.seen);
 }
 
 /// Freeze the current state of `Message` within the database.

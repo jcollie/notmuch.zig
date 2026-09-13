@@ -5,8 +5,20 @@
 //! corpus of email messages, so unit tests can exercise the bindings against
 //! real indexed mail. Only usable from tests — `std.testing.tmpDir` asserts
 //! that it is running in a test build.
+//!
+//! The mail store is a real maildir, created and delivered into through
+//! [zig-maildir](https://git.jcollie.dev/jeff/zig-maildir) rather than by
+//! writing files into `cur` by hand. Each message therefore arrives in `new`
+//! under a generated name that records its size and carries no maildir info
+//! part — an ordinary arrival that nobody has looked at yet — which is the
+//! state notmuch's flag synchronization expects to find and rename. Since
+//! those names are invented at delivery time and not known in advance, tests
+//! find their messages by `Message-ID` and ask the fixture for the filename
+//! a message actually landed under.
 
 const std = @import("std");
+
+const maildir = @import("maildir");
 
 const Database = @import("Database.zig");
 const helpers = @import("helpers.zig");
@@ -63,35 +75,78 @@ test countTags {
 }
 
 pub const CorpusMessage = struct {
-    filename: []const u8,
+    /// The message's `Message-ID` without its angle brackets. A delivered
+    /// maildir name is invented at delivery time, so this — and not a
+    /// filename — is how a test names the message it wants.
+    id: []const u8,
     data: []const u8,
 };
 
 /// A small fixed corpus: a two-message thread and two standalone messages.
 pub const corpus = [_]CorpusMessage{
-    .{ .filename = "one.eml", .data = @embedFile("testdata/one.eml") },
-    .{ .filename = "two.eml", .data = @embedFile("testdata/two.eml") },
-    .{ .filename = "three.eml", .data = @embedFile("testdata/three.eml") },
-    .{ .filename = "four.eml", .data = @embedFile("testdata/four.eml") },
+    .{ .id = "one@example.org", .data = @embedFile("testdata/one.eml") },
+    .{ .id = "two@example.org", .data = @embedFile("testdata/two.eml") },
+    .{ .id = "three@example.org", .data = @embedFile("testdata/three.eml") },
+    .{ .id = "four@example.org", .data = @embedFile("testdata/four.eml") },
 };
 
 test corpus {
-    // Each corpus entry is a complete RFC 5322 message with a stable
-    // Message-ID, so tests can look messages up by ID.
+    // Each corpus entry is a complete RFC 5322 message whose Message-ID is
+    // the one recorded beside it, so tests can look messages up by ID.
     try std.testing.expectEqual(@as(usize, 4), corpus.len);
     for (corpus) |message| {
-        try std.testing.expect(std.mem.indexOf(u8, message.data, "Message-ID: <") != null);
-        try std.testing.expect(std.mem.endsWith(u8, message.filename, ".eml"));
+        var buffer: [128]u8 = undefined;
+        const header = try std.fmt.bufPrint(&buffer, "Message-ID: <{s}>", .{message.id});
+        try std.testing.expect(std.mem.indexOf(u8, message.data, header) != null);
     }
 }
 
 pub const TestDatabase = struct {
     tmp: std.testing.TmpDir,
+    /// The mail store the database indexes, open for delivery.
+    mailbox: maildir.Maildir,
     database: Database,
+    /// Where each corpus message landed, in corpus order.
+    delivered: [corpus.len]maildir.Message,
 
     pub fn deinit(self: *TestDatabase) void {
         self.database.deinit() catch {};
+        self.mailbox.close(std.testing.io);
         self.tmp.cleanup();
+    }
+
+    /// Deliver a message into the mail store, without indexing it — indexing
+    /// is generally what the calling test is exercising. `options` says where
+    /// it lands and with which maildir flags; the default is `new` with none,
+    /// an ordinary arrival.
+    pub fn deliver(
+        self: *TestDatabase,
+        data: []const u8,
+        options: maildir.Maildir.DeliverOptions,
+    ) !maildir.Message {
+        return self.mailbox.deliver(std.testing.io, data, options);
+    }
+
+    /// The absolute path of a message in the mail store. The caller owns the
+    /// result and must free it with `std.testing.allocator`.
+    pub fn pathOf(self: *const TestDatabase, message: *const maildir.Message) ![:0]u8 {
+        const root = self.database.getPath() orelse return error.TestUnexpectedResult;
+        return std.fs.path.joinZ(
+            std.testing.allocator,
+            &.{ root, message.subdir.dirname(), message.filename() },
+        );
+    }
+
+    /// The absolute path of the corpus message at `index`. The caller owns
+    /// the result and must free it with `std.testing.allocator`.
+    pub fn path(self: *const TestDatabase, index: usize) ![:0]u8 {
+        return self.pathOf(&self.delivered[index]);
+    }
+
+    /// The name — the basename only — the corpus message at `index` was
+    /// delivered under.
+    pub fn filename(self: *const TestDatabase, index: usize) []const u8 {
+        return self.delivered[index].filename();
     }
 
     /// Begin streaming a new message into the maildir using
@@ -123,6 +178,20 @@ pub const TestMessageWriter = struct {
         return self.inner.writer();
     }
 
+    /// The name the message has in the mail store's `tmp` directory while it
+    /// is being written. See `helpers.MessageWriter.tempName`.
+    pub fn tempName(self: *const TestMessageWriter) []const u8 {
+        return self.inner.tempName();
+    }
+
+    /// Discard the message without delivering or indexing it, and free the
+    /// helper's resources.
+    pub fn cancel(self: *TestMessageWriter) void {
+        self.inner.cancel();
+        std.testing.allocator.free(self.buffer);
+        self.* = undefined;
+    }
+
     /// Flush and close the message file, index it into the database, and
     /// return the indexed message. Frees the helper's resources; the caller
     /// owns the returned message.
@@ -147,10 +216,10 @@ pub fn corpusDatabase() !TestDatabase {
     var tmp = std.testing.tmpDir(.{});
     errdefer tmp.cleanup();
 
-    try tmp.dir.createDir(io, "mail", .default_dir);
-    try tmp.dir.createDir(io, "mail/cur", .default_dir);
-    try tmp.dir.createDir(io, "mail/new", .default_dir);
-    try tmp.dir.createDir(io, "mail/tmp", .default_dir);
+    // A real maildir: `tmp`, `new` and `cur`, created in the order the
+    // specification asks for.
+    var mailbox = try maildir.Maildir.create(tmp.dir, io, "mail", .{});
+    errdefer mailbox.close(io);
 
     var dir_name_buf: [std.fs.max_path_bytes]u8 = undefined;
     const len = try tmp.dir.realPath(io, &dir_name_buf);
@@ -183,11 +252,12 @@ pub fn corpusDatabase() !TestDatabase {
         try writer.flush();
     }
 
-    for (corpus) |message| {
-        const sub_path = try std.fs.path.join(alloc, &.{ "mail", "cur", message.filename });
-        defer alloc.free(sub_path);
-        try tmp.dir.writeFile(io, .{ .sub_path = sub_path, .data = message.data });
-    }
+    // Delivered rather than copied into place: each message is written into
+    // `tmp` under a name nothing else will invent and renamed into `new` once
+    // it is whole, which is the only way a maildir is safe to write.
+    var delivered: [corpus.len]maildir.Message = undefined;
+    for (corpus, &delivered) |message, *slot|
+        slot.* = try mailbox.deliver(io, message.data, .{});
 
     const config_path = try std.fs.path.joinZ(alloc, &.{ dir_name, "config" });
     defer alloc.free(config_path);
@@ -201,13 +271,21 @@ pub fn corpusDatabase() !TestDatabase {
     };
     errdefer database.deinit() catch {};
 
-    for (corpus) |message| {
-        const path = try std.fs.path.joinZ(alloc, &.{ dir_name, "mail", "cur", message.filename });
+    for (&delivered) |*message| {
+        const path = try std.fs.path.joinZ(
+            alloc,
+            &.{ dir_name, "mail", message.subdir.dirname(), message.filename() },
+        );
         defer alloc.free(path);
         try database.indexFile(path, null);
     }
 
-    return .{ .tmp = tmp, .database = database };
+    return .{
+        .tmp = tmp,
+        .mailbox = mailbox,
+        .database = database,
+        .delivered = delivered,
+    };
 }
 
 test TestMessageWriter {
@@ -234,6 +312,40 @@ test TestMessageWriter {
     const query = try test_db.database.queryCreate("subject:streamed");
     defer query.deinit();
     try std.testing.expectEqual(@as(u32, 1), try query.countMessages());
+}
+
+test TestDatabase {
+    var test_db = try corpusDatabase();
+    defer test_db.deinit();
+    const alloc = std.testing.allocator;
+
+    // Every corpus message was delivered into `new` under a generated name
+    // recording its size, and the database found it there.
+    for (corpus, 0..) |message, index| {
+        const name: maildir.Name = .parse(test_db.filename(index), ':');
+        try std.testing.expectEqual(@as(?u64, message.data.len), name.size());
+        try std.testing.expectEqual(maildir.Name.Info.none, std.meta.activeTag(name.info));
+
+        const path = try test_db.path(index);
+        defer alloc.free(path);
+        try std.testing.expect(std.mem.indexOf(u8, path, "/new/") != null);
+
+        const found = try test_db.database.findMessageByFilename(path) orelse
+            return error.TestUnexpectedResult;
+        defer found.deinit();
+        try std.testing.expectEqualStrings(message.id, found.getMessageID() orelse "");
+    }
+
+    // Delivery through the fixture puts mail in the store that the database
+    // does not know about until something indexes it.
+    const extra = try test_db.deliver(corpus[0].data, .{ .to = .{ .cur = .{ .seen = true } } });
+    try std.testing.expect(extra.flags().seen);
+    const extra_path = try test_db.pathOf(&extra);
+    defer alloc.free(extra_path);
+    try std.testing.expectEqual(
+        @as(?Message, null),
+        try test_db.database.findMessageByFilename(extra_path),
+    );
 }
 
 test corpusDatabase {

@@ -57,10 +57,10 @@ test setMtime {
     const db = test_db.database;
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
 
-    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    const directory = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
     defer directory.deinit();
 
     // The stored mtime is read back with getMtime.
@@ -86,10 +86,10 @@ test getMtime {
     const db = test_db.database;
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
 
-    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    const directory = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
     defer directory.deinit();
 
     // No mtime has been stored yet.
@@ -126,13 +126,14 @@ test getChildFiles {
     const db = test_db.database;
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
 
-    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    const directory = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
     defer directory.deinit();
 
-    // All the indexed corpus messages live in cur; the entries are
+    // All the indexed corpus messages were delivered into new; the
+    // entries are
     // basenames, not complete paths.
     var files = try directory.getChildFiles();
     defer files.deinit();
@@ -170,23 +171,23 @@ test getChildDirectories {
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
 
-    // The mail root knows about cur, where the corpus was indexed.
+    // The mail root knows about new, where the corpus was delivered.
     const mail_root = try db.getDirectory(root) orelse return error.TestUnexpectedResult;
     defer mail_root.deinit();
     var dirs = try mail_root.getChildDirectories();
     defer dirs.deinit();
-    var saw_cur = false;
+    var saw_new = false;
     while (dirs.next()) |name| {
-        if (std.mem.eql(u8, name, "cur")) saw_cur = true;
+        if (std.mem.eql(u8, name, "new")) saw_new = true;
     }
-    try std.testing.expect(saw_cur);
+    try std.testing.expect(saw_new);
 
-    // cur itself has no sub-directories in the database.
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
-    const cur = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
-    defer cur.deinit();
-    var none = try cur.getChildDirectories();
+    // new itself has no sub-directories in the database.
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
+    const new = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
+    defer new.deinit();
+    var none = try new.getChildDirectories();
     defer none.deinit();
     try std.testing.expectEqual(@as(?[:0]const u8, null), none.next());
 }
@@ -207,17 +208,17 @@ test delete {
     const db = test_db.database;
 
     const root = db.getPath() orelse return error.TestUnexpectedResult;
-    const cur_path = try std.fs.path.joinZ(alloc, &.{ root, "cur" });
-    defer alloc.free(cur_path);
+    const new_path = try std.fs.path.joinZ(alloc, &.{ root, "new" });
+    defer alloc.free(new_path);
 
     // Store an mtime, then delete the directory document. delete also
     // deinitializes the object, so no deinit call follows.
-    const directory = try db.getDirectory(cur_path) orelse return error.TestUnexpectedResult;
+    const directory = try db.getDirectory(new_path) orelse return error.TestUnexpectedResult;
     try directory.setMtime(1711962000);
     try directory.delete();
 
     // The directory document is gone from the database.
-    try std.testing.expectEqual(@as(?Directory, null), try db.getDirectory(cur_path));
+    try std.testing.expectEqual(@as(?Directory, null), try db.getDirectory(new_path));
 }
 
 /// Deinitialize a `Directory` object.

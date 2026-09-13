@@ -57,6 +57,12 @@ exe.root_module.addImport("notmuch", notmuch.module("notmuch"));
 
 The module links `libnotmuch` and libc itself, so there is nothing else to add.
 
+The one Zig dependency, fetched by the build system, is
+[zig-maildir](https://git.jcollie.dev/jeff/zig-maildir): notmuch indexes a
+maildir but does not write one, so the helpers that put mail *into* the store
+deliver through it rather than inventing filenames and rename dances of their
+own. It is re-exported as `notmuch.maildir`.
+
 ## Where this lives
 
 The repository is hosted on Forgejo at
@@ -152,15 +158,17 @@ release memory sooner than the enclosing query would.
 
 Beyond the wrappers, `notmuch.helpers` composes the bindings with the Zig
 standard library. `MessageWriter` streams an email into the mail store through
-a `std.Io.Writer` and indexes it: a unique, timestamp-prefixed maildir
-filename is generated, and the file is materialized atomically, so no
-partially written message is ever visible. `MessageReader` reads a message's
-raw content back through a `std.Io.Reader`:
+a `std.Io.Writer` and indexes it, delivering it the way a maildir has to be
+written — into `tmp` under a name nothing else will invent, synced, and
+renamed into `new` or `cur` once it is whole — so a reader of the store never
+sees a partial message, and `cancel` removes the half-written file without a
+trace. `MessageReader` reads a message's raw content back through a
+`std.Io.Reader`:
 
 ```zig
 var buffer: [4096]u8 = undefined;
 
-var mw = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .subdir = .new });
+var mw = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{ .to = .new });
 try mw.writer().print("Message-ID: <{s}>\r\n\r\nHello!\r\n", .{message_id});
 const message = try mw.finish(null);
 defer message.deinit();
@@ -169,6 +177,15 @@ var mr = try notmuch.helpers.MessageReader.init(io, message, &buffer);
 defer mr.deinit();
 const content = try mr.reader().allocRemaining(allocator, .unlimited);
 defer allocator.free(content);
+```
+
+A message that is already read, or a draft, is delivered straight into `cur`
+with the maildir flags it carries — which notmuch then reads back as flags:
+
+```zig
+var mw = try notmuch.helpers.MessageWriter.init(io, db, &buffer, .{
+    .to = .{ .cur = .{ .seen = true, .draft = true } },
+});
 ```
 
 ### What's available
@@ -187,6 +204,7 @@ defer allocator.free(content);
 | `notmuch.Status` | the raw `notmuch_status_t` codes as a Zig enum, with libnotmuch's human-readable descriptions via `toString` |
 | `notmuch.compact`, `notmuch.builtWith`, `notmuch.tag_max` | module-level helpers |
 | `notmuch.helpers.MessageWriter`, `notmuch.helpers.MessageReader` | streaming an email through a `std.Io.Writer` into the mail store and indexing it, and reading a message's raw content through a `std.Io.Reader` (conveniences unique to these bindings) |
+| `notmuch.maildir` | [zig-maildir](https://git.jcollie.dev/jeff/zig-maildir), re-exported: delivery destinations and maildir flags for `helpers.MessageWriter`, and direct manipulation of the mail store itself |
 
 Full API documentation is generated from the source and published at
 <https://jeff.jcollie.page/notmuch.zig/>. To read it locally instead:
@@ -213,6 +231,9 @@ $ zig build test
 
 The suite exercises the bindings against real notmuch databases built in
 temporary directories from a small embedded email corpus (`src/testing.zig`).
+The corpus is delivered into a real maildir through zig-maildir rather than
+copied into `cur` by hand, so the messages carry generated names and the tests
+name them by `Message-ID`.
 Usage-example tests sit next to the functions they exercise as doctests, so
 they double as examples in the generated API documentation; edge cases and
 error paths live in `src/tests.zig`. A compile-check test
