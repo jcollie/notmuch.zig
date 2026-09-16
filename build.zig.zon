@@ -3,7 +3,7 @@
 
 .{
     .name = .notmuch,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .fingerprint = 0x25da472dbcafbfc8,
     .minimum_zig_version = "0.16.0-dev.2682+02142a54d",
 
@@ -20,5 +20,6 @@
         "src",
         "LICENSES",
         "README.md",
+        "CHANGELOG.md",
     },
 }

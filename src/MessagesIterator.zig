@@ -28,6 +28,21 @@ pub const NextError = error{
     /// Iteration was invalidated by the database. Re-open the database and
     /// try again.
     OperationInvalidated,
+    /// The item could not be built out of the database.
+    ///
+    /// `notmuch_messages_get` is documented to return NULL only for an
+    /// out-of-memory situation, but the message is constructed on demand out
+    /// of the database when it is asked for, so *any* failure to construct
+    /// one arrives the same way -- a read invalidated by a writer committing
+    /// underneath the search is how this was first seen, on a live archive
+    /// taking mail while somebody read it.
+    ///
+    /// Reported as a Xapian exception rather than as `OutOfMemory`, which is
+    /// what the header's wording would suggest, because the allocator is
+    /// rarely the real cause and a caller that treats running out of memory
+    /// as fatal would give up on something it should have retried. It is the
+    /// same mapping `Directory` uses for a NULL return.
+    XapianException,
     /// libnotmuch returned an undocumented status code.
     Unexpected,
 };
@@ -90,7 +105,7 @@ pub fn next(self: *const MessagesIterator) NextError!?Message {
             if (c.notmuch_messages_valid(messages) == 0) break :message null;
             defer c.notmuch_messages_move_to_next(messages);
             break :message .{
-                .message = c.notmuch_messages_get(messages) orelse unreachable,
+                .message = c.notmuch_messages_get(messages) orelse return error.XapianException,
             };
         },
         .iterator_exhausted => return null,
