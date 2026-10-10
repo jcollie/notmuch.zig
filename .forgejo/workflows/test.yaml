@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: © 2024 Jeffrey C. Ollie
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: nixos-do-s
+    enable-openid-connect: true
+    steps:
+      - name: Check out
+        uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check REUSE compliance
+        run: nix develop -c reuse lint
+
+      # `zig-pkg` is where Zig puts fetched dependencies, which are other
+      # people's source and not ours to format.
+      - name: Check Zig formatting compliance
+        run: nix develop -c zig fmt --check --exclude zig-pkg .
+
+      - name: Test
+        run: nix develop -c zig build test --summary all
+
+      - name: Build
+        run: nix develop -c zig build
+
+      - name: Push to the cache
+        if: ${{ !cancelled() && forge.ref == 'refs/heads/main' }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev
+
+  # Published only from main, so that a branch build cannot replace the site
+  # with a work in progress, and only after `test` has passed, so that it
+  # cannot document a tree that does not compile.
+  docs:
+    needs: test
+    if: ${{ forge.ref == 'refs/heads/main' }}
+    runs-on: nixos-do-s
+    enable-openid-connect: true
+    steps:
+      - name: Check out
+        uses: https://code.forgejo.org/actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build API docs
+        run: nix develop -c zig build docs
+
+      - name: Publish docs
+        run: >
+          nix develop -c git-pages-cli https://jeff.jcollie.page/notmuch.zig/
+          --server jcollie.page
+          --token ${{ forge.token }}
+          --upload-dir zig-out/docs
+
+      - name: Push to the cache
+        if: ${{ !cancelled() }}
+        uses: https://git.jcollie.dev/jeff/niks3-push@3f85f501658e379783381291241c6f8315a92716
+        with:
+          server-url: https://niks3.jcollie.dev
