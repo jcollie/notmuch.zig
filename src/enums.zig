@@ -18,10 +18,10 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
     const info = @typeInfo(c);
     var count = 0;
     var max = 0;
-    outer: for (info.@"struct".decls) |decl| {
-        for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
-        if (std.mem.startsWith(u8, decl.name, prefix)) {
-            max = @max(max, @field(c, decl.name));
+    outer: for (info.@"struct".decl_names) |name| {
+        for (skips) |skip| if (std.mem.eql(u8, skip, name)) continue :outer;
+        if (std.mem.startsWith(u8, name, prefix)) {
+            max = @max(max, @field(c, name));
             count += 1;
         }
     }
@@ -29,12 +29,12 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
     var field_names: [count][]const u8 = undefined;
     var field_values: [count]TagType = undefined;
     var index = 0;
-    outer: for (info.@"struct".decls) |decl| {
-        for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :outer;
-        if (std.mem.cutPrefix(u8, decl.name, prefix)) |suffix| {
+    outer: for (info.@"struct".decl_names) |name| {
+        for (skips) |skip| if (std.mem.eql(u8, skip, name)) continue :outer;
+        if (std.mem.cutPrefix(u8, name, prefix)) |suffix| {
             var buf: [suffix.len]u8 = undefined;
             field_names[index] = std.ascii.lowerString(&buf, suffix);
-            field_values[index] = @field(c, decl.name);
+            field_values[index] = @field(c, name);
             index += 1;
         }
     }
@@ -49,28 +49,28 @@ fn generateEnum(comptime prefix: []const u8, skips: []const []const u8) type {
 fn checkEnum(comptime E: type, comptime prefix: []const u8, comptime skips: []const []const u8) void {
     @setEvalBranchQuota(24000);
 
-    const e_fields = @typeInfo(E).@"enum".fields;
-    const c_decls = @typeInfo(c).@"struct".decls;
+    const e_info = @typeInfo(E).@"enum";
+    const c_decls = @typeInfo(c).@"struct".decl_names;
 
-    loop: for (c_decls) |decl| {
-        for (skips) |skip| if (std.mem.eql(u8, skip, decl.name)) continue :loop;
-        const suffix = std.mem.cutPrefix(u8, decl.name, prefix) orelse continue :loop;
+    loop: for (c_decls) |name| {
+        for (skips) |skip| if (std.mem.eql(u8, skip, name)) continue :loop;
+        const suffix = std.mem.cutPrefix(u8, name, prefix) orelse continue :loop;
         var b: [suffix.len]u8 = undefined;
         const s = std.ascii.lowerString(&b, suffix);
         if (@hasField(E, s)) continue :loop;
         @panic(std.fmt.comptimePrint("{s} is missing a value {s}", .{ @typeName(E), s }));
     }
-    for (e_fields) |field| {
-        var buf: [prefix.len + field.name.len]u8 = undefined;
+    for (e_info.field_names, e_info.field_values) |field_name, field_value| {
+        var buf: [prefix.len + field_name.len]u8 = undefined;
         @memcpy(buf[0..prefix.len], prefix);
-        _ = std.ascii.upperString(buf[prefix.len..], field.name);
-        if (!@hasDecl(c, &buf)) @panic(std.fmt.comptimePrint("{s} has a value {s} without a matching C value {s}.", .{ @typeName(E), field.name, &buf }));
-        if (field.value != @field(c, &buf)) @panic(std.fmt.comptimePrint(
+        _ = std.ascii.upperString(buf[prefix.len..], field_name);
+        if (!@hasDecl(c, &buf)) @panic(std.fmt.comptimePrint("{s} has a value {s} without a matching C value {s}.", .{ @typeName(E), field_name, &buf }));
+        if (field_value != @field(c, &buf)) @panic(std.fmt.comptimePrint(
             "{s} value {s}({d}) != c.{s}({d}).",
             .{
                 @typeName(E),
-                field.name,
-                field.value,
+                field_name,
+                field_value,
                 &buf,
                 @field(c, &buf),
             },
@@ -135,10 +135,10 @@ pub const Exclude = generateEnum("NOTMUCH_EXCLUDE_", &.{});
 test Exclude {
     // The backward-compatible ordering: the old FALSE/TRUE values 0 and 1
     // correspond to .flag and .true, not to .false and .true.
-    try std.testing.expectEqual(0, @intFromEnum(Exclude.flag));
-    try std.testing.expectEqual(1, @intFromEnum(Exclude.true));
-    try std.testing.expectEqual(2, @intFromEnum(Exclude.false));
-    try std.testing.expectEqual(3, @intFromEnum(Exclude.all));
+    try std.testing.expectEqual(0, @backingInt(Exclude.flag));
+    try std.testing.expectEqual(1, @backingInt(Exclude.true));
+    try std.testing.expectEqual(2, @backingInt(Exclude.false));
+    try std.testing.expectEqual(3, @backingInt(Exclude.all));
 }
 
 pub const MessageFlag = enum(u2) {
@@ -175,8 +175,8 @@ pub const MaildirFlag = enum(u8) {
 test MaildirFlag {
     // The enum values are the flag characters from the maildir ":2," info
     // part of a filename.
-    try std.testing.expectEqual('F', @intFromEnum(MaildirFlag.F));
-    try std.testing.expectEqual('S', @intFromEnum(MaildirFlag.S));
+    try std.testing.expectEqual('F', @backingInt(MaildirFlag.F));
+    try std.testing.expectEqual('S', @backingInt(MaildirFlag.S));
 }
 
 /// query syntax
@@ -184,8 +184,8 @@ pub const QuerySyntax = generateEnum("NOTMUCH_QUERY_SYNTAX_", &.{});
 
 test QuerySyntax {
     // Generated from the C constants, with lowercased field names.
-    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_XAPIAN, @intFromEnum(QuerySyntax.xapian));
-    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_SEXP, @intFromEnum(QuerySyntax.sexp));
+    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_XAPIAN, @backingInt(QuerySyntax.xapian));
+    try std.testing.expectEqual(c.NOTMUCH_QUERY_SYNTAX_SEXP, @backingInt(QuerySyntax.sexp));
 }
 
 /// Sort values for notmuch_query_set_sort.
@@ -193,10 +193,10 @@ pub const Sort = generateEnum("NOTMUCH_SORT_", &.{});
 
 test Sort {
     // Generated from the C constants, with lowercased field names.
-    try std.testing.expectEqual(c.NOTMUCH_SORT_OLDEST_FIRST, @intFromEnum(Sort.oldest_first));
-    try std.testing.expectEqual(c.NOTMUCH_SORT_NEWEST_FIRST, @intFromEnum(Sort.newest_first));
-    try std.testing.expectEqual(c.NOTMUCH_SORT_MESSAGE_ID, @intFromEnum(Sort.message_id));
-    try std.testing.expectEqual(c.NOTMUCH_SORT_UNSORTED, @intFromEnum(Sort.unsorted));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_OLDEST_FIRST, @backingInt(Sort.oldest_first));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_NEWEST_FIRST, @backingInt(Sort.newest_first));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_MESSAGE_ID, @backingInt(Sort.message_id));
+    try std.testing.expectEqual(c.NOTMUCH_SORT_UNSORTED, @backingInt(Sort.unsorted));
 }
 
 /// Status codes used for the return values of most functions.
@@ -272,7 +272,7 @@ pub const Status = enum(u5) {
     operation_invalidated = c.NOTMUCH_STATUS_OPERATION_INVALIDATED,
 
     pub fn init(rc: c.notmuch_status_t) Status {
-        return @enumFromInt(rc);
+        return @fromBackingInt(@intCast(rc));
     }
 
     /// Get libnotmuch's human-readable string representation of this status
@@ -282,7 +282,7 @@ pub const Status = enum(u5) {
     /// libnotmuch: it must not be modified or freed, and it remains valid
     /// for the lifetime of the program.
     pub fn toString(self: Status) [:0]const u8 {
-        return std.mem.span(c.notmuch_status_to_string(@intFromEnum(self)));
+        return std.mem.span(c.notmuch_status_to_string(@backingInt(self)));
     }
 
     test toString {

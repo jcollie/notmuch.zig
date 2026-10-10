@@ -25,7 +25,8 @@ undocumented status surfaces as a recoverable error rather than a crash.
 
 ## Requirements
 
-- Zig 0.16.0-dev.2682+02142a54d or newer
+- Zig 0.17.0 or newer (for Zig 0.16, use the `zig-0.16` branch or the
+  `0.3.0` tag)
 - `libnotmuch` 5.6 or newer (notmuch 0.32+), including its headers
 
 `build.zig` links `notmuch` as a system library and runs `translate-c` over

@@ -3,14 +3,14 @@
 
 .{
     .name = .notmuch,
-    .version = "0.3.0",
+    .version = "0.4.0",
     .fingerprint = 0x25da472dbcafbfc8,
-    .minimum_zig_version = "0.16.0-dev.2682+02142a54d",
+    .minimum_zig_version = "0.17.0",
 
     .dependencies = .{
         .zig_maildir = .{
-            .url = "git+https://git.jcollie.dev/jeff/zig-maildir.git#b9b9fd4a0159d159169fdc03b2ec326b7abfa54b",
-            .hash = "zig_maildir-0.0.0-C35R-dGYAwBAV9x3bRgvq5MvFwuw02XN0g5j-uWcGecb",
+            .url = "git+https://git.jcollie.dev/jeff/zig-maildir.git#b1a77e1581144f94ca97214cfebb0d6af3f1b55a",
+            .hash = "zig_maildir-0.2.0-C35R-fGYAwCr3O6Q5IYUA0Iq_ybtlq3BHf7G3kGEtGp1",
         },
     },
 

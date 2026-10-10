@@ -315,7 +315,7 @@ pub fn getFlag(self: *const Message, flag: MessageFlag) GetFlagError!bool {
     var is_set: c.notmuch_bool_t = undefined;
     return switch (status(c.notmuch_message_get_flag_st(
         self.message,
-        @intFromEnum(flag),
+        @backingInt(flag),
         &is_set,
     ))) {
         .success => is_set != 0,
@@ -344,7 +344,7 @@ test getFlag {
 
 /// Set a value of a flag for the email corresponding to `Message`.
 pub fn setFlag(self: *const Message, flag: MessageFlag, value: bool) void {
-    c.notmuch_message_set_flag(self.message, @intFromEnum(flag), @intFromBool(value));
+    c.notmuch_message_set_flag(self.message, @backingInt(flag), @intFromBool(value));
 }
 
 /// Get the date of `Message` as the number of seconds since the Unix epoch
@@ -641,7 +641,7 @@ pub const HasMaildirFlagError = error{
 /// Check message for maildir flag.
 pub fn hasMaildirFlag(self: *const Message, flag: MaildirFlag) HasMaildirFlagError!bool {
     var is_set: c.notmuch_bool_t = undefined;
-    return switch (status(c.notmuch_message_has_maildir_flag_st(self.message, @intFromEnum(flag), &is_set))) {
+    return switch (status(c.notmuch_message_has_maildir_flag_st(self.message, @backingInt(flag), &is_set))) {
         .success => is_set != 0,
         .null_pointer => unreachable,
         .xapian_exception => error.XapianException,

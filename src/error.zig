@@ -136,10 +136,10 @@ test wrap {
     try std.testing.expectError(error.BadQuerySyntax, wrap(c.NOTMUCH_STATUS_BAD_QUERY_SYNTAX));
 
     // No status other than success maps to success.
-    inline for (@typeInfo(Status).@"enum".fields) |field| {
-        const code: Status = @enumFromInt(field.value);
+    inline for (@typeInfo(Status).@"enum".field_values) |value| {
+        const code: Status = @fromBackingInt(@intCast(value));
         if (code != .success) {
-            try std.testing.expect(std.meta.isError(wrap(@intCast(field.value))));
+            try std.testing.expect(std.meta.isError(wrap(@intCast(value))));
         }
     }
 }

@@ -8,6 +8,15 @@ Notable changes to notmuch.zig. The format is loosely
 [semantic](https://semver.org/) — while the major version is 0, a breaking
 change raises the minor.
 
+## 0.4.0
+
+### Changed
+
+- **Zig 0.17.0 is required.** The bindings are ported to the released 0.17
+  compiler and standard library, and no longer build with 0.16. The 0.16
+  version is kept on the `zig-0.16` branch, starting from the `0.3.0` tag.
+- zig-maildir moves to 0.2.0, its first Zig 0.17 version.
+
 ## 0.3.0
 
 ### Fixed

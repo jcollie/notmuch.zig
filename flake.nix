@@ -36,7 +36,7 @@
             pkgs.pinact
             pkgs.pkg-config
             pkgs.reuse
-            pkgs.zig_0_16
+            pkgs.zig_0_17
           ];
           buildInputs = [
             pkgs.notmuch

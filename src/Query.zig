@@ -96,7 +96,7 @@ test getDatabase {
 /// `searchThreads` is very much faster when omitting excluded messages as it
 /// does not need to construct the threads that only match in excluded messages.
 pub fn setOmitExcluded(self: *const Query, omit_excluded: Exclude) void {
-    c.notmuch_query_set_omit_excluded(self.query, @intFromEnum(omit_excluded));
+    c.notmuch_query_set_omit_excluded(self.query, @backingInt(omit_excluded));
 }
 
 test setOmitExcluded {
@@ -141,7 +141,7 @@ test setOmitExcluded {
 
 /// Specify the sorting desired for this query.
 pub fn setSort(self: *const Query, sort: Sort) void {
-    c.notmuch_query_set_sort(self.query, @intFromEnum(sort));
+    c.notmuch_query_set_sort(self.query, @backingInt(sort));
 }
 
 test setSort {
@@ -163,7 +163,7 @@ test setSort {
 
 /// Return the sort specified for this query.
 pub fn getSort(self: *const Query) Sort {
-    return @enumFromInt(c.notmuch_query_get_sort(self.query));
+    return @fromBackingInt(@intCast(c.notmuch_query_get_sort(self.query)));
 }
 
 test getSort {

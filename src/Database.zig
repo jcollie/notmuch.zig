@@ -184,7 +184,7 @@ pub fn open(mode: Mode, options: OpenCreateOptions) OpenResult {
 
     const err = switch (status(c.notmuch_database_open_with_config(
         options.database_path orelse null,
-        @intFromEnum(mode),
+        @backingInt(mode),
         options.config_path orelse null,
         options.profile orelse null,
         &database,
@@ -223,7 +223,7 @@ test open {
     defer test_db.deinit();
 
     // Close the writer so its changes are committed and visible to readers.
-    const path = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    const path = try alloc.dupeSentinel(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult, 0);
     defer alloc.free(path);
     try test_db.database.close();
 
@@ -535,7 +535,7 @@ test loadConfig {
 
     // Load configuration through the fixture's config file, without opening
     // the Xapian database.
-    const config_path = try alloc.dupeZ(u8, test_db.database.configPath() orelse return error.TestUnexpectedResult);
+    const config_path = try alloc.dupeSentinel(u8, test_db.database.configPath() orelse return error.TestUnexpectedResult, 0);
     defer alloc.free(config_path);
 
     const loaded = switch (loadConfig(.{ .config_path = config_path })) {
@@ -1351,7 +1351,7 @@ pub const ReopenError = error{
 /// by other connections since it was opened. It also brings a database
 /// closed with `close` back into a usable state.
 pub fn reopen(self: *Database, mode: Mode) ReopenError!void {
-    return switch (status(c.notmuch_database_reopen(self.database, @intFromEnum(mode)))) {
+    return switch (status(c.notmuch_database_reopen(self.database, @backingInt(mode)))) {
         .success => {},
         .illegal_argument => error.IllegalArgument,
         .xapian_exception => error.XapianException,
@@ -1366,7 +1366,7 @@ test reopen {
     var test_db = try fixture.corpusDatabase();
     defer test_db.deinit();
 
-    const path = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    const path = try alloc.dupeSentinel(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult, 0);
     defer alloc.free(path);
 
     // A second, read-only connection to the same database.
@@ -1471,7 +1471,7 @@ test queryCreate {
 pub fn queryCreateWithSyntax(self: *const Database, query_string: [:0]const u8, syntax: QuerySyntax) Error!Query {
     var query: ?*c.notmuch_query_t = undefined;
 
-    try wrap(c.notmuch_query_create_with_syntax(self.database, query_string, @intFromEnum(syntax), &query));
+    try wrap(c.notmuch_query_create_with_syntax(self.database, query_string, @backingInt(syntax), &query));
 
     return .init(query orelse return error.OutOfMemory);
 }
@@ -1508,7 +1508,7 @@ test queryCreateWithSyntax {
 /// Otherwise returns a string owned by `notmuch` which should not be modified
 /// nor freed by the caller.
 pub fn configGet(self: *const Database, key: Config) Error!?[:0]const u8 {
-    return std.mem.span(c.notmuch_config_get(self.database, @intFromEnum(key)) orelse return null);
+    return std.mem.span(c.notmuch_config_get(self.database, @backingInt(key)) orelse return null);
 }
 
 test configGet {
@@ -1532,7 +1532,7 @@ test configGet {
 ///
 /// The database must be open in read-write mode.
 pub fn configSet(self: *const Database, key: Config, value: [:0]const u8) Error!void {
-    try wrap(c.notmuch_config_set(self.database, @intFromEnum(key), value));
+    try wrap(c.notmuch_config_set(self.database, @backingInt(key), value));
 }
 
 test configSet {
@@ -1646,7 +1646,7 @@ pub fn configGetValues(
     key: Config,
 ) ?ValuesIterator {
     return .{
-        .values = c.notmuch_config_get_values(self.database, @intFromEnum(key)) orelse return null,
+        .values = c.notmuch_config_get_values(self.database, @backingInt(key)) orelse return null,
     };
 }
 
@@ -1787,7 +1787,7 @@ pub fn configGetBool(
     key: Config,
 ) Error!bool {
     var value: c.notmuch_bool_t = undefined;
-    try wrap(c.notmuch_config_get_bool(self.database, @intFromEnum(key), &value));
+    try wrap(c.notmuch_config_get_bool(self.database, @backingInt(key), &value));
     return value != 0;
 }
 
@@ -1842,7 +1842,7 @@ test configPath {
 
     // A database opened with config_path "" reports the empty string as its
     // config path rather than null.
-    const path = try alloc.dupeZ(u8, root);
+    const path = try alloc.dupeSentinel(u8, root, 0);
     defer alloc.free(path);
     try db.close();
     const no_config = switch (open(.read_only, .{

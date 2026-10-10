@@ -225,11 +225,11 @@ pub const MessageWriter = struct {
 
         const root = self.database.getPath() orelse return error.NoDatabasePath;
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}/{s}", .{
+        const path = std.fmt.bufPrintSentinel(&path_buf, "{s}/{s}/{s}", .{
             root,
             delivered.subdir.dirname(),
             delivered.filename(),
-        }) catch return error.NameTooLong;
+        }, 0) catch return error.NameTooLong;
         return self.database.indexFileGetMessage(path, indexopts);
     }
 

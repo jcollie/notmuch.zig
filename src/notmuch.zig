@@ -70,7 +70,7 @@ test compact {
     var test_db = try fixture.corpusDatabase();
     defer test_db.tmp.cleanup();
     defer test_db.mailbox.close(io);
-    const root = try alloc.dupeZ(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult);
+    const root = try alloc.dupeSentinel(u8, test_db.database.getPath() orelse return error.TestUnexpectedResult, 0);
     defer alloc.free(root);
     const backup_path = try std.fs.path.joinZ(alloc, &.{
         std.fs.path.dirname(root) orelse return error.TestUnexpectedResult,
